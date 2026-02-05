@@ -79,7 +79,9 @@
 * **Provisioning**: AWS CDK (TypeScript)
 
 
----
+<br>
+<br>
+<br>
 
 # MyBlog-AWS 要件定義：設計決定の背景 (Design Rationale)
 

@@ -18,9 +18,9 @@
   * 認証失敗時: `401 Unauthorized`
   * 認可失敗時: `403 Forbidden`
 
-### 1.3 ベースURL
+### 1.3 ベースURL(仮)
 
-* **本番環境**: `https://api.myblog-aws.example.com`
+* **本番環境**: `https://api.shimizuhayato-myblog-aws.com`
 
 > **注**: 開発初期段階では本番環境のみを使用します。将来的に開発・ステージング環境を分離する必要が出た場合は、CDKのコンテキスト変数を用いた環境分離を検討します。
 
@@ -45,8 +45,8 @@
 | GET | `/api/admin/posts/{postId}` | 記事詳細取得（下書き含む） | 必要 |
 | POST | `/api/admin/posts` | 記事新規作成 | 必要 |
 | PUT | `/api/admin/posts/{postId}` | 記事更新 | 必要 |
-| DELETE | `/api/admin/posts/{postId}` | 記事削除 | 必要 |
-| POST | `/api/admin/media/upload` | メディアファイルアップロード | 必要 |
+| DELETE | `/api/admin/posts/{postId}` | 記事削除（論理削除） | 必要 |
+| POST | `/api/admin/media/presigned-url` | メディアアップロード用URL取得 | 必要 |
 
 ---
 
@@ -468,7 +468,7 @@ Authorization: Bearer <JWT_TOKEN>
 
 ### 4.5 記事削除
 
-記事を削除する（論理削除を推奨）。
+記事を削除する（論理削除）。
 
 #### エンドポイント
 ```
@@ -503,15 +503,52 @@ Authorization: Bearer eyJhbGciOiJSUzI1NiIs...
 }
 ```
 
+#### 実装上の注意（論理削除の詳細）
+
+**論理削除の実装方法:**
+
+記事の物理削除（DynamoDBからのアイテム削除）ではなく、`status` を `DELETED` に変更する論理削除を実装する。
+
+```json
+// 削除前
+{
+  "PK": "POST#p125",
+  "SK": "METADATA",
+  "status": "published"
+}
+
+// 削除後
+{
+  "PK": "POST#p125",
+  "SK": "METADATA",
+  "status": "deleted"  // ← ステータスを変更
+}
+```
+
+**一般ユーザー向けクエリでの考慮事項:**
+
+すべての一般ユーザー向けAPI（`GET /api/posts` など）では、`status = published` のみを取得するようにフィルタリングする。
+
+- **DynamoDBのクエリ**: GSI1で `status = published` を条件に検索
+- **フィルタ式の例**: `FilterExpression: "status = :published"`
+
+**GSIの設計例:**
+
+| GSI名 | PK | SK | 用途 |
+|------|----|----|-----|
+| GSI_Status | `status` | `createdAt` | ステータス別の記事取得 |
+
+これにより、削除済み記事（`status = deleted`）は一般ユーザーに表示されず、管理者のみが全ステータスの記事を確認できる。
+
 ---
 
-### 4.6 メディアファイルアップロード
+### 4.6 メディアアップロード用Pre-signed URL取得
 
-画像や動画をS3にアップロードし、CloudFront URLを取得する。
+S3への直接アップロード用のPre-signed URLを取得する。
 
 #### エンドポイント
 ```
-POST /api/admin/media/upload
+POST /api/admin/media/presigned-url
 ```
 
 #### 認証
@@ -519,23 +556,37 @@ POST /api/admin/media/upload
 Authorization: Bearer <JWT_TOKEN>
 ```
 
-#### リクエスト
-Content-Type: `multipart/form-data`
+#### リクエストボディ
+```json
+{
+  "fileName": "image1.jpg",
+  "fileType": "image/jpeg",
+  "mediaType": "image"
+}
+```
 
 | フィールド | 型 | 必須 | 説明 |
 |-----------|----|----|------|
-| `file` | binary | ○ | アップロードファイル |
-| `type` | string | ○ | メディアタイプ（`image`, `video`） |
+| `fileName` | string | ○ | ファイル名 |
+| `fileType` | string | ○ | MIMEタイプ（例: `image/jpeg`, `video/mp4`） |
+| `mediaType` | string | ○ | メディアタイプ（`image`, `video`） |
 
-#### レスポンス（201 Created）
+#### レスポンス（200 OK）
 ```json
 {
-  "mediaId": "m001",
-  "url": "https://cloudfront.../media/image1.jpg",
-  "type": "image",
-  "uploadedAt": "2025-01-23T16:00:00Z"
+  "uploadUrl": "https://myblog-media.s3.amazonaws.com/media/uuid-image1.jpg?X-Amz-Algorithm=...",
+  "mediaUrl": "https://cloudfront.../media/uuid-image1.jpg",
+  "mediaId": "uuid-image1",
+  "expiresIn": 300
 }
 ```
+
+| フィールド | 型 | 説明 |
+|-----------|----|----|
+| `uploadUrl` | string | S3へアップロードするためのPre-signed URL（5分間有効） |
+| `mediaUrl` | string | アップロード後にアクセスするCloudFront URL |
+| `mediaId` | string | メディアID（記事に紐付ける際に使用） |
+| `expiresIn` | integer | URLの有効期限（秒） |
 
 #### エラーレスポンス（400 Bad Request）
 ```json
@@ -544,6 +595,63 @@ Content-Type: `multipart/form-data`
   "message": "サポートされていないファイル形式です"
 }
 ```
+
+#### 実装上の注意（Pre-signed URLの利用）
+
+**なぜPre-signed URL方式を採用するのか:**
+
+1. **Lambdaのペイロード制限回避**: Lambda経由でバイナリデータを送ると、6MBの制限に引っかかる
+2. **コスト削減**: Lambdaの実行時間とメモリ消費を最小化
+3. **大容量ファイル対応**: 動画など大きなファイルのアップロードが可能
+4. **パフォーマンス向上**: S3への直接アップロードで転送速度が向上
+
+**フロントエンドでの実装フロー:**
+
+```javascript
+// 1. Pre-signed URLを取得
+const response = await fetch('/api/admin/media/presigned-url', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    fileName: file.name,
+    fileType: file.type,
+    mediaType: 'image'
+  })
+});
+
+const { uploadUrl, mediaUrl, mediaId } = await response.json();
+
+// 2. S3へ直接アップロード
+await fetch(uploadUrl, {
+  method: 'PUT',
+  headers: {
+    'Content-Type': file.type
+  },
+  body: file
+});
+
+// 3. 記事作成時にmediaUrlを使用
+const article = {
+  title: '新しい記事',
+  contentBlocks: [
+    {
+      order: 1,
+      type: 'image',
+      content: mediaUrl,  // ← CloudFront URLを使用
+      layout: 'full'
+    }
+  ]
+};
+```
+
+**セキュリティ考慮事項:**
+
+- Pre-signed URLの有効期限は5分に設定
+- アップロード可能なファイルタイプを制限（`image/*`, `video/*`のみ）
+- ファイルサイズの制限をS3バケットポリシーで設定（例: 最大50MB）
 
 ---
 
@@ -628,10 +736,10 @@ HTTP 429 Too Many Requests
 ## 7. 実装優先順位
 
 ### Phase 1: MVP（最小機能）
-1. ✅ `GET /api/posts` - 公開記事一覧取得
-2. ✅ `GET /api/posts/{postId}` - 記事詳細取得
-3. ✅ `POST /api/admin/posts` - 記事新規作成
-4. ✅ `PUT /api/admin/posts/{postId}` - 記事更新
+1. ⬜ `GET /api/posts` - 公開記事一覧取得
+2. ⬜ `GET /api/posts/{postId}` - 記事詳細取得
+3. ⬜ `POST /api/admin/posts` - 記事新規作成
+4. ⬜ `PUT /api/admin/posts/{postId}` - 記事更新
 
 ### Phase 2: 管理機能強化
 5. ⬜ `GET /api/admin/posts` - 全記事一覧取得

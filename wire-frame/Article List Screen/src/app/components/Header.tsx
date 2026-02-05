@@ -1,13 +1,17 @@
 import { Search, Menu } from 'lucide-react';
+import { useState } from 'react';
+import { MobileMenu } from './MobileMenu';
 
 export function Header() {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
   return (
     <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* ロゴ / タイトル */}
           <div className="flex items-center">
-            <h1 className="text-2xl font-bold text-gray-900">MyBlog</h1>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-900">MyBlog</h1>
           </div>
 
           {/* ナビゲーションメニュー（デスクトップ） */}
@@ -24,7 +28,7 @@ export function Header() {
           </nav>
 
           {/* 検索アイコンとハンバーガーメニュー（モバイル） */}
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2 sm:space-x-4">
             <button 
               className="p-2 text-gray-600 hover:text-gray-900 transition-colors"
               aria-label="検索"
@@ -34,12 +38,40 @@ export function Header() {
             <button 
               className="p-2 text-gray-600 hover:text-gray-900 md:hidden transition-colors"
               aria-label="メニュー"
+              onClick={() => setIsMobileMenuOpen(true)}
             >
               <Menu className="w-5 h-5" />
             </button>
           </div>
         </div>
       </div>
+
+      {/* モバイルメニュー */}
+      <MobileMenu isOpen={isMobileMenuOpen} onClose={() => setIsMobileMenuOpen(false)}>
+        <nav className="p-4 space-y-1">
+          <a
+            href="#"
+            className="block px-4 py-3 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors font-medium"
+            onClick={() => setIsMobileMenuOpen(false)}
+          >
+            Home
+          </a>
+          <a
+            href="#"
+            className="block px-4 py-3 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors font-medium"
+            onClick={() => setIsMobileMenuOpen(false)}
+          >
+            About
+          </a>
+          <a
+            href="#"
+            className="block px-4 py-3 text-gray-700 hover:bg-gray-50 rounded-lg transition-colors font-medium"
+            onClick={() => setIsMobileMenuOpen(false)}
+          >
+            Contact
+          </a>
+        </nav>
+      </MobileMenu>
     </header>
   );
 }

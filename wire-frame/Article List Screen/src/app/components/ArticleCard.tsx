@@ -28,32 +28,32 @@ export function ArticleCard({ article }: ArticleCardProps) {
       </div>
 
       {/* コンテンツエリア */}
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         {/* カテゴリータグ */}
         <div className="mb-3">
-          <span className="inline-block px-3 py-1 text-sm text-blue-600 bg-blue-50 rounded-full">
+          <span className="inline-block px-3 py-1 text-xs sm:text-sm text-blue-600 bg-blue-50 rounded-full">
             {article.category}
           </span>
         </div>
 
         {/* タイトル */}
-        <h2 className="text-xl font-semibold text-gray-900 mb-2 line-clamp-2 group-hover:text-blue-600 transition-colors">
+        <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-2 line-clamp-2 group-hover:text-blue-600 transition-colors">
           <a href="#">{article.title}</a>
         </h2>
 
         {/* 要約 */}
-        <p className="text-gray-600 mb-4 line-clamp-2">
+        <p className="text-sm sm:text-base text-gray-600 mb-4 line-clamp-2">
           {article.summary}
         </p>
 
         {/* メタ情報 */}
-        <div className="flex items-center text-sm text-gray-500 space-x-4">
+        <div className="flex items-center text-xs sm:text-sm text-gray-500 space-x-3 sm:space-x-4">
           <div className="flex items-center space-x-1">
-            <Calendar className="w-4 h-4" />
+            <Calendar className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>{article.date}</span>
           </div>
           <div className="flex items-center space-x-1">
-            <Clock className="w-4 h-4" />
+            <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
             <span>{article.readTime}</span>
           </div>
         </div>

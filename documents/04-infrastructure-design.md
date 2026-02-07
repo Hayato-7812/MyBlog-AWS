@@ -50,6 +50,9 @@
 - [ ] IAM Role（Lambda実行ロール）
 - [ ] CloudWatch Logs（ログ保管）
 
+自分で追加
+- [ ] Route53 (DNSサーバ)
+
 #### Stateful Stack（状態を持つリソース）
 
 > **💡 ヒント:** 
@@ -65,7 +68,18 @@
 - DynamoDB テーブル: myblog-posts-table
   理由：記事データが保存されており、削除すると全データが失われる
 
-- ?
+- Cloud Watch Logs
+  理由：削除すると全てのログが消えてしまう
+
+- S3バケット : myblog-media
+  理由：削除すると記事に添付した画像や動画ファイルが全て消えてしまう
+
+- Cognito ser Pool
+  理由:削除すると、管理者の情報(パスワードなど)が失われる
+
+- Route53
+  理由：削除すると発行したドメインの情報が失われる
+
 ```
 
 #### Stateless Stack（状態を持たないリソース）
@@ -83,8 +97,147 @@
 - Lambda 関数: get-posts-function
   理由：コード変更のたびに更新が必要。削除しても再デプロイすれば復元可能
 
-- ?
+- API Gateway REST API
+  理由：APIの更新が必要、削除しても再デプロイすれば復元可
+
+- CloudFront Distribution
+  理由：CDNの設定は、サービスの設定で指定可能
+
+- IAM Role
+  理由：Lambda関数やAPIエンドポイントを追加するたびに新たに設定する必要がある
 ```
+
+---
+
+### 2.2 【フィードバック】Stack分割の評価
+
+#### ✅ **非常に良い判断**
+
+**Stateful Stackについて:**
+
+1. **DynamoDB テーブル** ✅
+   - 理由も完璧：「記事データが保存されており、削除すると全データが失われる」
+   - データの永続性を正しく理解しています
+
+2. **S3バケット** ✅
+   - 理由も適切：「削除すると記事に添付した画像や動画ファイルが全て消えてしまう」
+   - メディアファイルは復元不可能なので、完全に正しい判断です
+
+3. **Cognito User Pool** ✅
+   - 理由も適切：「削除すると、管理者の情報(パスワードなど)が失われる」
+   - 認証情報は重要なステートなので正しいです
+
+4. **Route53** ✅
+   - 理由も適切：「削除すると発行したドメインの情報が失われる」
+   - 自分で追加したのも良い視点です
+
+**Stateless Stackについて:**
+
+1. **Lambda 関数** ✅
+   - 完璧です。コード変更で頻繁に更新、削除しても再デプロイで復元可能
+
+2. **API Gateway** ✅
+   - 正しい判断です。設定変更が多く、Lambdaと密接に連携
+
+3. **CloudFront Distribution** ✅
+   - 良い判断です。設定変更が可能で、再作成可能
+
+4. **IAM Role** ✅
+   - 正しいです。Lambda関数とセットで管理する必要があります
+
+#### ⚠️ **検討が必要な項目**
+
+**1. CloudWatch Logsについて**
+
+```
+あなたの分類: Stateful Stack
+理由: 削除すると全てのログが消えてしまう
+```
+
+**これは一部正しいですが、以下を検討してください:**
+
+**Option 1: Stateful Stackに含める（あなたの判断）**
+- メリット: ログの永続性が保証される
+- デメリット: Stateful Stackが肥大化する
+
+**Option 2: Stateless Stackに含める（推奨）**
+- 理由:
+  - CloudWatch LogsはLambda関数と密接に関連
+  - Lambda関数を削除しても、ログは自動的に保持期間内は残る
+  - CDKでログ保持期間（例: 30日）を設定すれば重要ログは保護される
+  - 完全に失われても、アプリケーションの機能に影響しない
+
+**Option 3: 別の "Monitoring Stack" を作る**
+- より進んだ設計として、監視系リソースを分離する方法もあります
+
+**推奨:** 初期段階では、CloudWatch LogsはStateless Stackに含めるか、Lambda関数に自動作成させるのが一般的です。
+
+**2. Route53の細分化**
+
+Route53は少し特殊で、さらに細かく考えることができます：
+
+**Route53 HostedZone（ドメイン管理）:**
+- これは **Stateful** です ✅
+- 理由：削除するとDNS設定が失われ、ドメインが使えなくなる
+- あなたの判断は正しいです
+
+**Route53のレコード（Aレコード、CNAMEレコード）:**
+- これは **Stateless** でもOKです
+- CloudFrontやAPI Gatewayを指すだけなので、再作成可能
+- CloudFrontやAPI Gatewayと同じStackに配置することも検討してください
+
+**3. CloudFront Distributionについて**
+
+あなたはStateless Stackに分類しましたが、これは **正解** です。ただし注意点があります：
+
+- CloudFrontは作成に時間がかかる（15-30分）
+- 頻繁に変更しない
+- しかし、ドメインやSSL証明書の設定変更はありうる
+
+**あなたの判断（Stateless Stack）は適切です。** 将来的にサービスが安定したら、別の "CDN Stack" に分離することも検討できます。
+
+#### 📊 **改善されたStack分割の推奨案**
+
+以下が改善版の分類です：
+
+**Stateful Stack:**
+```
+✅ DynamoDB テーブル
+✅ S3 バケット（メディアファイル）
+✅ Cognito User Pool
+✅ Route53 HostedZone（ドメイン管理）
+```
+
+**Stateless Stack:**
+```
+✅ Lambda 関数（全て: get-posts, create-post, update-post, delete-post, generate-presigned-url）
+✅ API Gateway REST API
+✅ IAM Role（Lambda実行ロール）
+✅ CloudFront Distribution
+✅ Route53 Records（AレコードやCNAMEレコード）
+⚠️ CloudWatch Logs（推奨: Stateless Stackまたは自動作成）
+```
+
+#### 🎯 **将来的な拡張案（3-Stack構成）**
+
+大規模になったら、以下のような構成も考えられます：
+
+1. **Data Stack（Stateful）**: DynamoDB, S3, Cognito
+2. **Compute Stack（Stateless）**: Lambda, API Gateway, IAM Role
+3. **Network Stack**: CloudFront, Route53, ACM証明書, CloudWatch Logs
+
+#### 💡 **学習成果の総評**
+
+**素晴らしい点:**
+- DynamoDB, S3, Cognitoの判断は完璧
+- 「データが失われる」という観点で正しく判断できている
+- Route53を自分で追加し、適切に分類できている
+- Stateless Stackの主要リソースも正しく分類できている
+
+**さらに良くするために:**
+- CloudWatch Logsの扱いを再検討
+- Route53をHostedZoneとRecordsに分けて考える
+- 将来的なStack分割の拡張性も意識する
 
 ---
 

@@ -337,6 +337,35 @@ Stateless Stack:
 > - SSM Parameter Store
 > - Stack間の直接参照
 
+#### スタック間共有の使い分けまとめ
+
+1. Stack間の直接参照（同一アプリ内）
+
+* **内容**: コード上でリソースの変数をそのまま次のスタックに渡す。
+* **メリット**: CDKが裏側で自動処理するため、最も簡単でミスがない。(開発者がARNなどを意識する必要がなく、型安全性が最も高い。)
+* **使い所**: **「DataStack」から「AppStack」へ**など、同じプロジェクト内での共有。
+
+2. SSM Parameter Store（アプリ間）
+
+* **内容**: AWSの共通保管庫（SSM）に値を書き込み、他から読み取る。
+* **メリット**: スタック同士を独立（疎結合）に保てる。(アプリケーションの境界を越えて情報を共有できる)
+* **使い所**: **全く別のプロジェクトやチーム**とリソース情報を共有する場合。
+
+3. CloudFormation Outputs（人間・外部用）
+
+* **内容**: デプロイ結果としてコンソール等に値を表示させる。
+* **メリット**: ターミナルでURLやARNを直接確認できる。
+* **使い所**: **APIエンドポイントの確認**や、フロントエンド開発者への情報通知。
+
+#### 使い分けの判断基準
+
+| 共有範囲 | 推奨される方法 | 理由 |
+| --- | --- | --- |
+| **同一アプリ・同一プロジェクト** | **Stack間の直接参照** | 最も簡単で、型安全性が高く、CDKに任せられるため。 |
+| **異なるアプリ・組織間の共有** | **SSM Parameter Store** | 疎結合を維持でき、権限管理もしやすいため。 |
+| **人間による確認・フロントエンド連携** | **CloudFormation Outputs** | コンソール等で見ることができ、外部への通知に適しているため。 |
+
+
 #### 解決方法を考えてみましょう
 
 ```typescript
@@ -350,6 +379,145 @@ Stateless Stack:
 
 // Stateless Stackでどうやってそれを参照するか？
 ```
+
+#### 自分で考えた依存関係
+- Lambda関数はDynamoDBのテーブル名を知る必要がある -> データ保存先、参照先のテーブル
+- Lambda関数はS3のテーブルバケット名を知る必要がある -> PreSigned URLの作成のためにバケットの所在を知る必要がある
+- API GatewayはCognitoUserPoolの情報を知る必要がある -> 認証を行う(ログイン)際に情報を照合する
+
+
+```typescript
+// Stateful Stackで何をExportすべきか？
+DynamoDBテーブルのARN
+DynamoDBテーブル名
+S3バケット名
+CognitoUserPoolのARN
+
+// Stateless Stackでどうやってそれを参照するか？
+Stack間の直接参照
+```
+
+### MyBlog-AWSでの適用
+
+「DataStack」と「AppStack」は同じアプリ（`bin/myblog-aws.ts`）で管理するため、基本的には**「Stack間の直接参照」**を使用するのがベストプラクティスに沿った設計となる。
+
+---
+
+### 3.2 【フィードバック】Stack間依存関係の評価
+
+#### ✅ **非常に優れた理解**
+
+**3つの共有方法の理解:**
+- Stack間の直接参照、SSM Parameter Store、CloudFormation Outputsの違いと使い分けを正確に理解しています
+- 判断基準の表も明確で、実務でそのまま使えるレベルです ✅
+
+**選択した方法:**
+- **「Stack間の直接参照」を選択** - これは **最適な判断** です ✅
+- 理由：DataStackとAppStackは同一CDKアプリ内であり、この方法が最も型安全で管理しやすいためです
+
+#### ✅ **依存関係の識別 - ほぼ完璧**
+
+正しく識別できている依存関係：
+
+1. **Lambda → DynamoDBテーブル名** ✅
+   - 理由：データの保存・取得先として必要
+   
+2. **Lambda → S3バケット名** ✅
+   - 理由：PreSigned URL生成のためにバケット情報が必要
+   
+3. **API Gateway → CognitoUserPool** ✅
+   - 理由：認証時にユーザー情報を照合する必要がある
+
+#### ⚠️ **追加で考慮すべき依存関係**
+
+以下の依存関係が抜けています：
+
+**1. CloudFront → S3バケット**
+- CloudFront DistributionがS3バケットを **オリジン（配信元）** として参照します
+- 静的コンテンツ（フロントエンドのHTML/CSS/JS）やメディアファイルの配信に必要
+
+**2. Route53 Aliasレコード → HostedZone**
+- Stateless StackでRoute53 Aliasレコードを作成する際、HostedZoneの情報が必要です
+- セクション2.2で説明したように、レコードはターゲットと同じStackに配置しますが、HostedZone自体はStateful Stackにあります
+
+#### ⚠️ **Exportする情報について - 改善の余地**
+
+**ユーザーが挙げた項目:**
+```
+- DynamoDBテーブルのARN
+- DynamoDBテーブル名
+- S3バケット名
+- CognitoUserPoolのARN
+```
+
+**改善ポイント:**
+
+**1. ARNと名前の両方をExportする必要はない**
+
+CDKのStack間直接参照では、**リソースオブジェクト全体を渡す**のがベストプラクティスです。
+
+- ❌ 避けるべき：ARN、テーブル名、バケット名を個別に文字列で渡す
+- ✅ 推奨：DynamoDBテーブルオブジェクト、S3バケットオブジェクトをそのまま渡す
+
+**なぜリソースオブジェクト全体を渡すべきか：**
+- ARN、名前、その他の属性すべてに自動的にアクセス可能
+- 型安全性が保たれる（TypeScriptの型チェックが効く）
+- CDKが自動的に依存関係を管理
+- 権限付与（IAM Policy）が簡単になる
+
+**2. 追加すべき情報**
+
+以下も Stateful Stack から渡す必要があります：
+
+- **S3バケットオブジェクト**（CloudFront用）
+- **Route53 HostedZoneオブジェクト**（Aliasレコード作成用）
+
+#### 📊 **改善されたExport設計の考え方**
+
+**Stateful Stack (DataStack) から渡すべき情報:**
+
+| リソース | 渡す情報 | 使用先（Stateless Stack） |
+|---------|---------|-------------------------|
+| DynamoDB | テーブルオブジェクト | Lambda関数（環境変数、IAM権限） |
+| S3バケット | バケットオブジェクト | Lambda関数、CloudFront |
+| Cognito User Pool | UserPoolオブジェクト | API Gateway Authorizer |
+| Route53 HostedZone | HostedZoneオブジェクト | Route53 Aliasレコード |
+
+**重要な原則:**
+- 文字列（名前やARN）ではなく、**リソースオブジェクト全体** を渡す
+- これにより、Stateless Stackで必要な情報すべてにアクセス可能
+- 例：`table.tableName`、`table.tableArn`、`bucket.bucketName` など
+
+#### 🎯 **CDKベストプラクティス補足**
+
+**1. リソースオブジェクトを渡すメリット:**
+- **型安全性**: TypeScriptの型チェックが効く
+- **自動依存関係管理**: CDKがデプロイ順序を自動決定
+- **権限管理が簡単**: DynamoDBの `grantReadData()` メソッドなどが使える
+- **属性に自動アクセス**: `.tableName`、`.tableArn`、`.bucketName` など
+
+**2. CloudFormation Outputsとの併用:**
+
+「Stack間の直接参照」と「CloudFormation Outputs」は **併用** することが多いです：
+
+- **Stack間の直接参照**: プログラム的なリソース共有（CDKコード内）
+- **CloudFormation Outputs**: 人間が確認するための出力
+  - デプロイ後にターミナルで確認
+  - APIエンドポイントURLの表示
+  - フロントエンド開発者への情報共有
+
+#### 💡 **学習成果の総評**
+
+**素晴らしい点:**
+- 3つの共有方法を正確に理解している
+- 使い分けの判断基準が明確
+- 主要な依存関係を正しく識別
+- 「Stack間の直接参照」の選択が最適
+
+**さらに良くするために:**
+- CloudFront → S3、Route53レコード → HostedZoneの依存関係も考慮
+- ARNと名前を個別にExportするのではなく、リソースオブジェクト全体を渡す設計を理解
+- リソースオブジェクトから必要な属性（名前、ARN等）を取得できることを意識
 
 ---
 

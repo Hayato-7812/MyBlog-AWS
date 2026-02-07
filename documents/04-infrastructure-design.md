@@ -287,11 +287,15 @@ Stateless Stack:
 ```
 ✅ Lambda 関数（全て: get-posts, create-post, update-post, delete-post, generate-presigned-url）
 ✅ API Gateway REST API
+✅ API Gateway Custom Domain
 ✅ IAM Role（Lambda実行ロール）
 ✅ CloudFront Distribution
-✅ Route53 Records（AレコードやCNAMEレコード）
+✅ Route53 Alias Records（CloudFront用、API Gateway用）
+✅ ACM証明書（CloudFront用はus-east-1、API Gateway用はデプロイリージョン）
 ⚠️ CloudWatch Logs（推奨: Stateless Stackまたは自動作成）
 ```
+
+**注記:** Route53のAliasレコードとACM証明書は、そのターゲットリソース（CloudFront、API Gateway）と同じStackに配置することで、デプロイの一貫性が保たれます。
 
 #### 🎯 **将来的な拡張案（3-Stack構成）**
 

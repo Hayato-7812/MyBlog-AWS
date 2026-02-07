@@ -617,7 +617,7 @@ CDKのStack間直接参照では、**リソースオブジェクト全体を渡�
 
 ---
 
-## 5. 環境分離（将来的な拡張）
+## 5. 環境分離（将来的な拡張） 【skip】
 
 > **💭 発展的な考察:**
 >
@@ -657,11 +657,193 @@ CDKのStack間直接参照では、**リソースオブジェクト全体を渡�
 
 **あなたの命名規則:**
 ```
-DynamoDBテーブル: ?
-S3バケット: ?
-Lambda関数: ?
-API Gateway: ?
+パターン1を採用: {project}-{env}-{resource-type}-{purpose}
 ```
+
+---
+
+### 6.2 【提案】MyBlog-AWS プロジェクトの命名規則
+
+#### 基本方針
+
+**採用パターン:** `{project}-{env}-{resource-type}-{purpose}`
+
+**理由:**
+- プロジェクト名が先頭にあることで、AWSコンソールでの検索・フィルタリングが容易
+- 環境（prod/dev）が早い段階で識別できる
+- リソースタイプで分類しやすい
+- 用途が最後にあり、具体的な機能がわかりやすい
+
+#### 命名規則の詳細
+
+**基本ルール:**
+- プロジェクト名: `myblog`
+- 環境: `prod`（本番環境）、`dev`（開発環境、将来追加時）
+- すべて小文字、ハイフン区切り
+- 略語は避け、明確な名前を使用
+
+#### リソースごとの命名規則
+
+**1. DynamoDB テーブル**
+```
+形式: myblog-{env}-dynamodb-{purpose}
+
+例:
+- myblog-prod-dynamodb-posts      # 記事データテーブル
+- myblog-prod-dynamodb-categories  # カテゴリテーブル（将来追加時）
+```
+
+**2. S3 バケット**
+```
+形式: myblog-{env}-s3-{purpose}
+
+例:
+- myblog-prod-s3-media            # メディアファイル保管用
+- myblog-prod-s3-frontend         # フロントエンドホスティング用（将来追加時）
+
+注意: S3バケット名はグローバルでユニークである必要があるため、
+     必要に応じてアカウントIDやリージョンを追加:
+     myblog-prod-s3-media-123456789012-ap-northeast-1
+```
+
+**3. Lambda 関数**
+```
+形式: myblog-{env}-lambda-{purpose}
+
+例:
+- myblog-prod-lambda-get-posts         # 記事一覧・詳細取得
+- myblog-prod-lambda-create-post       # 記事作成
+- myblog-prod-lambda-update-post       # 記事更新
+- myblog-prod-lambda-delete-post       # 記事削除
+- myblog-prod-lambda-presigned-url     # Pre-signed URL生成
+```
+
+**4. API Gateway**
+```
+形式: myblog-{env}-api-{purpose}
+
+例:
+- myblog-prod-api-rest                # REST API本体
+- myblog-prod-api-custom-domain       # カスタムドメイン
+```
+
+**5. CloudFront**
+```
+形式: myblog-{env}-cloudfront-{purpose}
+
+例:
+- myblog-prod-cloudfront-main         # メインディストリビューション
+```
+
+**6. Cognito**
+```
+形式: myblog-{env}-cognito-{purpose}
+
+例:
+- myblog-prod-cognito-userpool        # ユーザープール
+- myblog-prod-cognito-userpool-client # ユーザープールクライアント
+```
+
+**7. Route53**
+```
+形式: myblog-{env}-route53-{purpose}
+
+例:
+- myblog-prod-route53-hostedzone      # ホストゾーン
+- myblog-prod-route53-record-main     # メインドメインレコード
+- myblog-prod-route53-record-api      # APIドメインレコード
+```
+
+**8. IAM Role**
+```
+形式: myblog-{env}-role-{purpose}
+
+例:
+- myblog-prod-role-lambda-get-posts   # get-posts Lambda用ロール
+- myblog-prod-role-lambda-create-post # create-post Lambda用ロール
+```
+
+**9. CloudWatch Logs**
+```
+形式: /aws/lambda/myblog-{env}-lambda-{purpose}
+
+例:
+- /aws/lambda/myblog-prod-lambda-get-posts
+- /aws/lambda/myblog-prod-lambda-create-post
+
+注意: CloudWatch LogsのLog Group名は、Lambda関数名に自動的に対応
+```
+
+**10. ACM 証明書**
+```
+形式: CDKで自動生成されるため、タグで管理
+
+タグ:
+- Name: myblog-prod-certificate-cloudfront
+- Name: myblog-prod-certificate-apigateway
+```
+
+#### 環境別の例
+
+**本番環境（prod）:**
+```
+myblog-prod-dynamodb-posts
+myblog-prod-lambda-get-posts
+myblog-prod-api-rest
+myblog-prod-cloudfront-main
+```
+
+**開発環境（dev）- 将来追加時:**
+```
+myblog-dev-dynamodb-posts
+myblog-dev-lambda-get-posts
+myblog-dev-api-rest
+myblog-dev-cloudfront-main
+```
+
+#### CDKでの実装例
+
+```typescript
+// Stateful Stack
+const postsTable = new dynamodb.Table(this, 'PostsTable', {
+  tableName: `myblog-${env}-dynamodb-posts`,
+  // ...
+});
+
+const mediaBucket = new s3.Bucket(this, 'MediaBucket', {
+  bucketName: `myblog-${env}-s3-media-${accountId}-${region}`,
+  // ...
+});
+
+// Stateless Stack
+const getPostsFunction = new lambda.Function(this, 'GetPostsFunction', {
+  functionName: `myblog-${env}-lambda-get-posts`,
+  // ...
+});
+
+const api = new apigateway.RestApi(this, 'RestApi', {
+  restApiName: `myblog-${env}-api-rest`,
+  // ...
+});
+```
+
+#### 命名規則の一貫性チェックリスト
+
+- [ ] すべてのリソース名が `myblog` で始まっている
+- [ ] 環境識別子（prod/dev）が含まれている
+- [ ] リソースタイプが明確に識別できる
+- [ ] 用途が具体的に記述されている
+- [ ] ハイフン区切りで統一されている
+- [ ] すべて小文字である
+- [ ] S3バケット名のグローバルユニーク性を考慮している
+
+#### 命名規則のメリット
+
+1. **検索性**: AWSコンソールで `myblog-prod-` で検索すると本番環境のすべてのリソースが表示
+2. **可読性**: リソース名を見れば、何のリソースか一目瞭然
+3. **一貫性**: 同じパターンを使うことで、新しいリソース追加時も迷わない
+4. **環境分離**: prod/devが明確に分離され、誤操作を防止
+5. **自動化**: スクリプトやCDKでの命名生成が容易
 
 ---
 

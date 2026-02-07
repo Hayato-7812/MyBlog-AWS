@@ -172,19 +172,94 @@
 
 **推奨:** 初期段階では、CloudWatch LogsはStateless Stackに含めるか、Lambda関数に自動作成させるのが一般的です。
 
-**2. Route53の細分化**
+**2. Route53の細分化とレコード設計**
 
-Route53は少し特殊で、さらに細かく考えることができます：
+Route53は少し特殊で、さらに細かく考える必要があります：
 
 **Route53 HostedZone（ドメイン管理）:**
 - これは **Stateful** です ✅
 - 理由：削除するとDNS設定が失われ、ドメインが使えなくなる
 - あなたの判断は正しいです
 
-**Route53のレコード（Aレコード、CNAMEレコード）:**
+**Route53のレコード（DNSレコード）:**
 - これは **Stateless** でもOKです
-- CloudFrontやAPI Gatewayを指すだけなので、再作成可能
-- CloudFrontやAPI Gatewayと同じStackに配置することも検討してください
+- ターゲット（CloudFrontやAPI Gateway）を指すだけなので、再作成可能
+- **重要**: レコードはそのターゲットと同じStackに配置することを推奨
+
+**Route53のレコードタイプと実装方針（CDK設計上の重要ポイント）:**
+
+DNSレコードには主に以下の種類がありますが、**AWSリソースと連携する場合は必ず「Aliasレコード」を使用** します：
+
+1. **Aレコード（Address Record）**
+   - 通常：ドメイン名をIPv4アドレスに紐付ける
+   - AWS Alias版：AWSリソース（CloudFront、ALB等）に直接紐付ける
+   
+2. **CNAMEレコード（Canonical Name Record）**
+   - ドメイン名を別のドメイン名に紐付ける
+   - **制約**: ゾーン頂点（例：`example.com`）には設定不可（DNS仕様の制限）
+   - サブドメイン（例：`www.example.com`）のみ使用可能
+
+3. **Aliasレコード（Route53独自の機能）** ← これを使う！
+   - AWSリソース専用の特別なAレコード
+   - **メリット**:
+     - ゾーン頂点でも使える（CNAMEの制約を回避）
+     - クエリ料金が無料（Route53内部の解決）
+     - AWSリソースのエンドポイント変更に自動追従
+   - **CDKのベストプラクティス**: AWSリソースには必ずAliasを使用
+
+**MyBlogプロジェクトでの具体的な設定:**
+
+```
+ドメイン                                  レコードタイプ    ターゲット
+--------------------------------------------------------
+shimizuhayato-myblog-aws.com           Alias (A)       CloudFront Distribution
+api.shimizuhayato-myblog-aws.com       Alias (A)       API Gateway Custom Domain
+```
+
+**CDK実装の参考:**
+
+```typescript
+// CloudFront用のAliasレコード
+new route53.ARecord(this, 'WebsiteAliasRecord', {
+  zone: hostedZone,
+  target: route53.RecordTarget.fromAlias(
+    new targets.CloudFrontTarget(distribution)
+  ),
+});
+
+// API Gateway用のAliasレコード
+new route53.ARecord(this, 'ApiAliasRecord', {
+  zone: hostedZone,
+  recordName: 'api',  // api.shimizuhayato-myblog-aws.com
+  target: route53.RecordTarget.fromAlias(
+    new targets.ApiGatewayDomain(apiGatewayDomain)
+  ),
+});
+```
+
+**HTTPS対応のための注意点:**
+
+カスタムドメインでHTTPSを使用するには、ACM（AWS Certificate Manager）証明書が必要です：
+
+- **CloudFront用**: `us-east-1`リージョンの証明書が必須
+- **API Gateway用**: デプロイするリージョンの証明書
+- **CDK**: `CertificateValidation.fromDns(hostedZone)`で自動検証が可能
+
+**Stack配置の推奨:**
+
+```
+Stateful Stack:
+  - Route53 HostedZone
+
+Stateless Stack:
+  - CloudFront Distribution
+  - Route53 Alias Record → CloudFront
+  - API Gateway Custom Domain
+  - Route53 Alias Record → API Gateway
+  - ACM証明書（CloudFront用、API Gateway用）
+```
+
+この設計により、リソースとそのDNS設定が一緒にデプロイされ、一貫性が保たれます。
 
 **3. CloudFront Distributionについて**
 

@@ -533,18 +533,87 @@ CDKのStack間直接参照では、**リソースオブジェクト全体を渡�
 >
 > なぜそう考えましたか？
 
+#### 回答
+- Stateful Stackからデプロイすべき
+理由：依存関係がある場合、依存先のリソースを定義してからでないと論理的な関係が構築できない
+
 #### デプロイフローを考えてみましょう
 
 ```
-ステップ1: ?
-理由: ?
+ステップ1: Stateful Stack
+理由: for Stateless Stack
 
-ステップ2: ?
-理由: ?
+ステップ2: Stateless Stack
+理由: 
 
 ステップ3: ?（必要であれば）
 理由: ?
 ```
+
+---
+
+### 4.2 【フィードバック】デプロイ順序の評価
+
+#### ✅ **完璧な判断**
+
+**ユーザーの回答は100%正しいです。**
+
+**デプロイ順序:**
+```
+1. Stateful Stack (DataStack) → 先にデプロイ
+2. Stateless Stack (AppStack) → 後にデプロイ
+```
+
+**理由:**
+- Stateless StackがStateful Stackのリソース（DynamoDB、S3等）を参照する
+- 参照される側（依存される側）を先にデプロイする必要がある
+- これは依存関係の基本原則
+
+#### 📋 **デプロイフローの完成版**
+
+```
+ステップ1: Stateful Stack (DataStack)
+理由: Stateless Stackが依存するリソース（DynamoDB、S3、
+      Cognito、Route53 HostedZone）を作成
+
+ステップ2: Stateless Stack (AppStack)
+理由: Stateful Stackのリソースを参照して、Lambda、
+      API Gateway、CloudFront、Route53 Recordsを作成
+
+ステップ3: （通常は不要）
+理由: 2つのStackで完結。将来的にMonitoring Stack等を
+      分離する場合は最後にデプロイ
+```
+
+#### 🔄 **更新・削除時の注意点**
+
+**更新時:**
+- Stateful Stackのみ更新 → Stateful Stackのみデプロイ
+- Stateless Stackのみ更新 → Stateless Stackのみデプロイ
+- 両方を更新 → Stateful Stack → Stateless Stackの順
+
+**削除時:**
+- **逆順で削除**: Stateless Stack → Stateful Stack
+- 理由：依存関係があるため、先にStateful Stackを削除するとエラーになる
+
+#### 💡 **CDKの自動依存関係管理**
+
+**重要なポイント:**
+- CDKは依存関係を自動的に解決する
+- `cdk deploy --all` で依存順に自動デプロイされる
+- ただし、概念として理解しておくことは非常に重要
+
+**デプロイ時間の目安:**
+- Stateful Stack: 2-5分
+- Stateless Stack: 15-30分（CloudFrontが時間かかる）
+- 合計: 初回デプロイで約20-35分
+
+#### 🎓 **学習成果の総評**
+
+**素晴らしい点:**
+- デプロイ順序の判断が完璧 ✅
+- 依存関係の概念を正しく理解 ✅
+- 理由も適切に説明できている ✅
 
 ---
 

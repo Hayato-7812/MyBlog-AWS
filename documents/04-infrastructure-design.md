@@ -401,6 +401,7 @@ Stack間の直接参照
 
 「DataStack」と「AppStack」は同じアプリ（`bin/myblog-aws.ts`）で管理するため、基本的には**「Stack間の直接参照」**を使用するのがベストプラクティスに沿った設計となる。
 
+![alt text](assets/images/CDK-service_dependency.png)
 ---
 
 ### 3.2 【フィードバック】Stack間依存関係の評価
@@ -1152,17 +1153,259 @@ API Gateway:                    $3
 
 ```
 get-posts Lambda:
-- DynamoDB: [ここに必要な権限をリストアップ]
-- S3: [必要? 不要?]
+- DynamoDB: dynamodb:GetItem
+- S3: 不要 (presigned-url(dynamoDB)を取れれば、静的ホスティングされたサイトから直接URLを参照)
 
 create-post Lambda:
 - DynamoDB: [ここに必要な権限をリストアップ]
-- S3: [必要? 不要?]
+- S3: s3:PutObject
 
 generate-presigned-url Lambda:
-- DynamoDB: [必要? 不要?]
-- S3: [ここに必要な権限をリストアップ]
+- DynamoDB: 不要
+- S3: s3:GetObject
 ```
+
+---
+
+### 8.2 【フィードバック】セキュリティ設計の評価
+
+#### ✅ **良い点**
+
+**1. get-posts Lambda**
+- `dynamodb:GetItem` ✅ 正しい
+- S3不要の判断 ✅ 正しい理由付け
+
+**2. generate-presigned-url Lambda**
+- DynamoDB不要 ✅ 正しい
+- `s3:GetObject` ⚠️ 部分的に正しいが、補足必要
+
+#### ⚠️ **改善が必要な点**
+
+### **1. get-posts Lambda の権限が不完全**
+
+**ユーザーの回答:** `dynamodb:GetItem`
+
+**問題点:**
+- 単一記事取得（GetItem）のみで、**記事一覧取得（Query/Scan）の権限がない**
+
+**必要な権限:**
+```
+get-posts Lambda:
+- DynamoDB: 
+  - dynamodb:Query     （推奨）カテゴリや日付でフィルタリング
+  - dynamodb:Scan      （オプション）全記事取得
+  - dynamodb:GetItem   （個別記事取得）
+- S3: 不要 ✅
+```
+
+**理由:**
+- 記事一覧表示には`Query`または`Scan`が必要
+- `GetItem`だけでは特定のpostIdの記事しか取得できない
+- パフォーマンス的には`Query`推奨（効率的）
+
+---
+
+### **2. create-post Lambda の権限が未完成**
+
+**ユーザーの回答:** DynamoDB権限が未記入
+
+**必要な権限:**
+```
+create-post Lambda:
+- DynamoDB:
+  - dynamodb:PutItem   （新規記事作成）
+- S3:
+  - s3:PutObject      ✅ 正しい（ただし不要の可能性）
+```
+
+**S3権限についての注意:**
+- **create-post Lambda自体がS3にアップロードする場合**: `s3:PutObject`必要
+- **フロントエンドが直接Pre-signed URLでアップロードする場合**: 不要
+
+**推奨アーキテクチャ:**
+```
+1. フロントエンドが generate-presigned-url Lambda を呼び出し
+2. Pre-signed URLを取得
+3. フロントエンドが直接S3にアップロード（Pre-signed URL使用）
+4. アップロード完了後、create-post Lambda を呼び出し
+5. DynamoDBに記事メタデータ（画像URLを含む）を保存
+```
+
+この場合、**create-post LambdaにはS3権限不要** です。
+
+---
+
+### **3. generate-presigned-url Lambda の権限が不十分**
+
+**ユーザーの回答:** `s3:GetObject`
+
+**問題点:**
+- Pre-signed URLには**GET用**と**PUT用**の2種類がある
+- 画像アップロードにはPUT用Pre-signed URLが必要
+
+**必要な権限:**
+```
+generate-presigned-url Lambda:
+- DynamoDB: 不要 ✅
+- S3:
+  - s3:PutObject   （アップロード用Pre-signed URL生成）
+  - s3:GetObject   （ダウンロード用Pre-signed URL生成、オプション）
+```
+
+**用途別の整理:**
+- **画像アップロード時**: `s3:PutObject`のPre-signed URL
+- **画像ダウンロード時**: `s3:GetObject`のPre-signed URL（CloudFront経由なら不要）
+
+**個人ブログの場合:**
+- アップロードにのみPre-signed URLを使用
+- ダウンロードはCloudFront経由でパブリックアクセス
+- → `s3:PutObject`のみで十分
+
+---
+
+### **4. update-post Lambda の権限が未記入**
+
+**必要な権限:**
+```
+update-post Lambda:
+- DynamoDB:
+  - dynamodb:UpdateItem  （記事更新）
+  - dynamodb:GetItem     （更新前の存在確認、オプション）
+- S3: 不要（画像更新は別途Pre-signed URL経由）
+```
+
+**注意点:**
+- `PutItem`は完全置換、`UpdateItem`は部分更新
+- 記事更新には`UpdateItem`が適切
+- 存在確認が必要なら`GetItem`も追加
+
+---
+
+### **5. delete-post Lambda の権限が未記入**
+
+**必要な権限:**
+```
+delete-post Lambda:
+- DynamoDB:
+  - dynamodb:DeleteItem  （記事削除）
+  - dynamodb:GetItem     （削除前の存在確認、オプション）
+- S3:
+  - s3:DeleteObject      （関連画像の削除）
+  - s3:ListBucket        （削除対象画像の一覧取得、オプション）
+```
+
+**設計上の検討点:**
+- 記事削除時に画像も削除するか？
+  - **削除する場合**: S3権限必要
+  - **残す場合**: S3権限不要（ライフサイクルポリシーで後日削除）
+
+**推奨:** 
+- 初期は画像を残す（S3権限不要）
+- ライフサイクルポリシーで古いファイルを自動削除
+
+---
+
+### 📊 **完成版：Lambda関数ごとのIAM権限設計**
+
+#### **最小権限の原則に基づく設計**
+
+```
+1. get-posts Lambda:
+   DynamoDB:
+     - dynamodb:Query      （記事一覧取得）
+     - dynamodb:GetItem    （個別記事取得）
+   S3: 不要
+
+2. create-post Lambda:
+   DynamoDB:
+     - dynamodb:PutItem    （新規記事作成）
+   S3: 不要（フロントエンドが直接Pre-signed URL経由でアップロード）
+
+3. update-post Lambda:
+   DynamoDB:
+     - dynamodb:UpdateItem （記事更新）
+     - dynamodb:GetItem    （存在確認、オプション）
+   S3: 不要
+
+4. delete-post Lambda:
+   DynamoDB:
+     - dynamodb:DeleteItem （記事削除）
+   S3: 不要（初期設計、後日ライフサイクルポリシーで自動削除）
+
+5. generate-presigned-url Lambda:
+   DynamoDB: 不要
+   S3:
+     - s3:PutObject        （アップロード用Pre-signed URL生成）
+```
+
+---
+
+### 🔒 **セキュリティベストプラクティス**
+
+#### **1. リソースレベルの権限制限**
+
+各Lambda関数には、**特定のリソースのみ**にアクセス権限を付与：
+
+```
+Lambda関数のIAM Policy例（最小権限）:
+
+get-posts Lambda:
+  - Effect: Allow
+    Action:
+      - dynamodb:Query
+      - dynamodb:GetItem
+    Resource: arn:aws:dynamodb:region:account:table/myblog-prod-dynamodb-posts
+
+generate-presigned-url Lambda:
+  - Effect: Allow
+    Action:
+      - s3:PutObject
+    Resource: arn:aws:s3:::myblog-prod-s3-media/*
+```
+
+#### **2. 環境変数の管理**
+
+Lambda関数に渡す情報：
+- ✅ テーブル名、バケット名（環境変数）
+- ❌ IAM認証情報（Lambda実行ロールが自動管理）
+
+#### **3. Cognitoとの統合**
+
+- API GatewayでCognitoオーソライザー設定
+- Lambda関数では`event.requestContext.authorizer.claims`で認証情報取得
+- Lambda関数自体にCognito権限は不要
+
+#### **4. CloudWatchログ権限**
+
+すべてのLambda関数に自動的に付与される基本権限：
+```
+- logs:CreateLogGroup
+- logs:CreateLogStream
+- logs:PutLogEvents
+```
+（Lambda実行ロールに自動追加、明示的な設定不要）
+
+---
+
+### 💡 **学習成果の総評**
+
+**素晴らしい点:**
+- 最小権限の原則を意識している ✅
+- get-posts LambdaにS3権限不要の判断が正しい ✅
+- アーキテクチャ（Pre-signed URL経由のアップロード）を理解している ✅
+
+**改善すべき点:**
+- get-postsに`Query`権限が抜けている
+- create-postのDynamoDB権限が未記入
+- generate-presigned-urlは`PutObject`も必要
+- update-post、delete-postの権限設計が未考慮
+- リソースレベルの権限制限の考慮
+
+**推奨される次のアクション:**
+1. 全Lambda関数の権限を完成させる
+2. リソースARNを限定した権限設計
+3. Pre-signed URLのユースケース（PUT/GET）を明確化
+4. 画像削除戦略（即時削除 vs ライフサイクルポリシー）を決定
 
 ---
 

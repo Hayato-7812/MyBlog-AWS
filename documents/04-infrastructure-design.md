@@ -1153,11 +1153,14 @@ API Gateway:                    $3
 
 ```
 get-posts Lambda:
-- DynamoDB: dynamodb:GetItem
+- DynamoDB: 
+  - dynamodb:GetItem (単一記事)
+  - dynamodb:Scan (全件)
+  - dynamodb:Query (カテゴリや日付で取得)
 - S3: 不要 (presigned-url(dynamoDB)を取れれば、静的ホスティングされたサイトから直接URLを参照)
 
 create-post Lambda:
-- DynamoDB: [ここに必要な権限をリストアップ]
+- DynamoDB: dynamodb:PutItem 
 - S3: s3:PutObject
 
 generate-presigned-url Lambda:
@@ -1169,53 +1172,49 @@ generate-presigned-url Lambda:
 
 ### 8.2 【フィードバック】セキュリティ設計の評価
 
-#### ✅ **良い点**
+#### ✅ **素晴らしい点**
 
-**1. get-posts Lambda**
-- `dynamodb:GetItem` ✅ 正しい
+**1. get-posts Lambda - 完璧**
+- `dynamodb:GetItem` ✅ 単一記事取得
+- `dynamodb:Scan` ✅ 全件取得
+- `dynamodb:Query` ✅ カテゴリや日付でフィルタリング
 - S3不要の判断 ✅ 正しい理由付け
+- **評価**: 必要な権限をすべて正しく識別しています！
 
-**2. generate-presigned-url Lambda**
+**2. create-post Lambda - 正しい**
+- `dynamodb:PutItem` ✅ 新規記事作成に必要
+- `s3:PutObject` の記載について補足必要（後述）
+
+**3. generate-presigned-url Lambda**
 - DynamoDB不要 ✅ 正しい
-- `s3:GetObject` ⚠️ 部分的に正しいが、補足必要
+- `s3:GetObject` ⚠️ 部分的に正しいが、重要な補足が必要
 
 #### ⚠️ **改善が必要な点**
 
-### **1. get-posts Lambda の権限が不完全**
+### **1. create-post Lambda のS3権限について**
 
-**ユーザーの回答:** `dynamodb:GetItem`
+**ユーザーの回答:** `s3:PutObject`
 
-**問題点:**
-- 単一記事取得（GetItem）のみで、**記事一覧取得（Query/Scan）の権限がない**
-
-**必要な権限:**
-```
-get-posts Lambda:
-- DynamoDB: 
-  - dynamodb:Query     （推奨）カテゴリや日付でフィルタリング
-  - dynamodb:Scan      （オプション）全記事取得
-  - dynamodb:GetItem   （個別記事取得）
-- S3: 不要 ✅
-```
-
-**理由:**
-- 記事一覧表示には`Query`または`Scan`が必要
-- `GetItem`だけでは特定のpostIdの記事しか取得できない
-- パフォーマンス的には`Query`推奨（効率的）
+**評価:**
+- これは**アーキテクチャ次第**で正しい場合と不要な場合があります
 
 ---
 
-### **2. create-post Lambda の権限が未完成**
+### **2. create-post Lambda の権限 - ほぼ正しい**
 
-**ユーザーの回答:** DynamoDB権限が未記入
+**ユーザーの回答:** `dynamodb:PutItem`, `s3:PutObject`
+
+**評価:**
+- `dynamodb:PutItem` ✅ **正しい**（新規記事作成に必要）
+- `s3:PutObject` ⚠️ **条件付きで正しい**
 
 **必要な権限:**
 ```
 create-post Lambda:
 - DynamoDB:
-  - dynamodb:PutItem   （新規記事作成）
+  - dynamodb:PutItem   ✅ 正しい
 - S3:
-  - s3:PutObject      ✅ 正しい（ただし不要の可能性）
+  - s3:PutObject      （条件次第）
 ```
 
 **S3権限についての注意:**

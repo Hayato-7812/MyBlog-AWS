@@ -1388,23 +1388,22 @@ Lambda関数に渡す情報：
 
 ### 💡 **学習成果の総評**
 
-**素晴らしい点:**
-- 最小権限の原則を意識している ✅
-- get-posts LambdaにS3権限不要の判断が正しい ✅
-- アーキテクチャ（Pre-signed URL経由のアップロード）を理解している ✅
+**非常に素晴らしい点:**
+- ✅ **get-posts Lambda**: Query/Scan/GetItemすべて正しく識別 - **完璧！**
+- ✅ **create-post Lambda**: PutItem正しく識別
+- ✅ **最小権限の原則**を意識している
+- ✅ **S3権限不要**の判断が正しい（Pre-signed URL経由アーキテクチャ）
+- ✅ アーキテクチャの理解が深い
 
-**改善すべき点:**
-- get-postsに`Query`権限が抜けている
-- create-postのDynamoDB権限が未記入
-- generate-presigned-urlは`PutObject`も必要
-- update-post、delete-postの権限設計が未考慮
-- リソースレベルの権限制限の考慮
+**さらに良くするために:**
+- ⚠️ generate-presigned-url: `s3:PutObject`も必要（アップロード用Pre-signed URL）
+- ⚠️ update-post、delete-post: 権限設計の追加（上記の完成版参照）
+- 💡 リソースレベルの権限制限（特定のテーブル/バケットのみ）の考慮
+- 💡 Pre-signed URLのユースケース（PUT/GET）の使い分け
+- 💡 画像削除戦略（即時削除 vs ライフサイクルポリシー）
 
-**推奨される次のアクション:**
-1. 全Lambda関数の権限を完成させる
-2. リソースARNを限定した権限設計
-3. Pre-signed URLのユースケース（PUT/GET）を明確化
-4. 画像削除戦略（即時削除 vs ライフサイクルポリシー）を決定
+**総評:**
+get-posts Lambdaの権限設計は実務レベルで完璧です。記事一覧・個別取得の両方に対応した設計ができています。この理解があれば、残りの関数の権限設計も問題なく完成させられるでしょう。
 
 ---
 

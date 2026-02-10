@@ -1302,6 +1302,78 @@ delete-post Lambda:
 - 初期は画像を残す（S3権限不要）
 - ライフサイクルポリシーで古いファイルを自動削除
 
+#### **🎯 採用決定：ライフサイクルポリシーアプローチ**
+
+**判断根拠:**
+
+**1. コスト試算による比較**
+
+| 項目 | 即時削除 | ライフサイクル（90日） |
+|------|---------|---------------------|
+| Lambda実行コスト | +$0.001/月 | $0 |
+| S3ストレージコスト | $0 | +$0.004/月 |
+| IAM権限管理コスト | 高（複雑） | 低（シンプル） |
+| 運用コスト | 高（エラー対応） | 低（自動化） |
+| **合計** | 約$0.01/月 | 約$0.004/月 |
+
+**年間コスト差**: 約$0.07（無視できるレベル）
+
+**2. 技術的メリット**
+
+```
+✅ Lambda関数がシンプル（DynamoDB操作のみ）
+✅ 最小権限の原則を維持（S3権限不要）
+✅ 誤削除からの保護（90日間の猶予）
+✅ トランザクション問題なし
+✅ エラーハンドリングが単純
+✅ 自動化により運用負荷ゼロ
+```
+
+**3. リスク評価**
+
+| リスク | 即時削除 | ライフサイクル |
+|--------|---------|---------------|
+| 誤削除 | 高 | 低 |
+| データ不整合 | 中 | なし |
+| Lambda障害 | 中 | 低 |
+| コスト超過 | 低 | 低 |
+
+**4. 個人ブログにおける判断**
+
+```
+記事削除頻度: 月1-2記事程度（想定）
+画像サイズ: 平均2MB/枚、3枚/記事
+年間削除: 12-24記事 = 72-144MB
+
+90日保持による追加コスト:
+144MB × (90/365) × $0.023/GB = 約$0.0008/月
+→ 年間約$0.01（ほぼ無料）
+```
+
+**結論:**
+- 年間コスト差が$0.07（約10円）と無視できる
+- 技術的メリットが圧倒的に大きい
+- 誤削除リスクを大幅に軽減
+- **ライフサイクルポリシーを採用**
+
+**実装方針:**
+```typescript
+lifecycleRules: [
+  {
+    id: 'delete-old-media-files',
+    enabled: true,
+    expiration: cdk.Duration.days(90),
+    // 30日後にStandard-IAに移行（オプション）
+    transitions: [
+      {
+        storageClass: s3.StorageClass.INFREQUENT_ACCESS,
+        transitionAfter: cdk.Duration.days(30),
+      },
+    ],
+  },
+]
+```
+
 ---
 
 ### 📊 **完成版：Lambda関数ごとのIAM権限設計**
@@ -1409,73 +1481,591 @@ get-posts Lambdaの権限設計は実務レベルで完璧です。記事一覧�
 
 ## 9. モニタリング・ログ設計
 
-### 9.1 【あなたが考えてください】何を監視すべきか？
+### 9.1 監視戦略
 
-> **📊 考えるべきポイント:**
->
-> 本番運用時に「何かおかしい」と気づくために、何を監視しますか？
->
-> **CloudWatch Metricsで監視すべき項目:**
-> - Lambda関数のエラー率？
-> - API GatewayのHTTP 5xxエラー数？
-> - DynamoDBのスロットリングエラー？
->
-> **CloudWatch Logsで記録すべき情報:**
-> - すべてのAPIリクエスト？
-> - エラーのみ？
-> - 個人情報（ユーザーIDなど）は記録して良い？
+個人ブログの運用において、過度な監視は不要ですが、**最低限の健全性チェック**と**トラブルシューティング用のログ**は必要です。
 
-#### 監視項目の設計
+---
+
+### 9.2 CloudWatch Metrics 監視項目
+
+#### **監視レベルの定義**
+
+| レベル | 目的 | 対応速度 | コスト |
+|--------|------|---------|--------|
+| Critical（緊急） | サービス停止 | 即座 | 高 |
+| Warning（警告） | パフォーマンス低下 | 24時間以内 | 中 |
+| Info（情報） | 傾向把握 | 定期確認 | 低 |
+
+#### **個人ブログでの推奨監視項目**
+
+**1. Lambda関数のエラー率（Critical）**
+```
+監視メトリクス: Errors
+しきい値: エラー率 > 5%（5分間）
+アクション: メール通知
+
+理由:
+- Lambda関数のエラーは直接的なサービス障害
+- 5%は「20回中1回失敗」を意味し、ユーザー体験に影響
+- 個人ブログでは即座の対応が難しいため、メール通知で十分
+```
+
+**2. API Gateway 5xxエラー（Critical）**
+```
+監視メトリクス: 5XXError
+しきい値: 5xxエラー > 10件（5分間）
+アクション: メール通知
+
+理由:
+- 5xxはサーバー側のエラー（Lambda障害、タイムアウト等）
+- 継続的な5xxはサービス全体の問題を示唆
+- 10件は誤検知を避けるための閾値
+```
+
+**3. DynamoDB スロットリング（Warning）**
+```
+監視メトリクス: UserErrors（SystemErrorsではない）
+しきい値: スロットリング > 100回（15分間）
+アクション: メール通知
+
+理由:
+- スロットリングはRCU/WCU不足を示す
+- 即座のサービス停止ではないが、パフォーマンス低下
+- Provisioned Capacityの見直しが必要なサイン
+```
+
+**4. Lambda Duration（Info）**
+```
+監視メトリクス: Duration
+しきい値: 平均実行時間 > 5秒（1時間）
+アクション: ダッシュボード表示のみ（通知なし）
+
+理由:
+- パフォーマンスの長期的な傾向を把握
+- メモリサイズ最適化の判断材料
+- コスト最適化に活用
+```
+
+**5. CloudFront キャッシュヒット率（Info）**
+```
+監視メトリクス: CacheHitRate
+しきい値: < 80%（24時間）
+アクション: ダッシュボード表示のみ
+
+理由:
+- キャッシュ効率の確認
+- 設定の最適化ポイントを発見
+- S3/API Gatewayへのリクエスト削減効果を確認
+```
+
+#### **個人ブログで監視不要な項目**
+
+❌ **DynamoDB読み取り/書き込みキャパシティ使用率**
+- 理由：スロットリング監視で十分
+
+❌ **Lambda同時実行数**
+- 理由：個人ブログのトラフィックでは上限に達しない
+
+❌ **API Gatewayのレイテンシー**
+- 理由：エラー監視で十分。細かいレイテンシーは不要
+
+---
+
+### 9.3 CloudWatch Logs 設計
+
+#### **ログレベルの定義**
 
 ```
-アラートを設定すべき項目:
-1. ?
-   しきい値：?
-   理由：?
-
-2. ?
-   しきい値：?
-   理由：?
-
-ログに記録する情報:
-- Lambda実行時間: Yes / No
-- リクエストボディ: Yes / No（セキュリティ上の問題は？）
-- ?
+ERROR:   エラー発生時（必須）
+WARN:    警告（推奨）
+INFO:    重要な処理の記録（推奨）
+DEBUG:   詳細なデバッグ情報（開発時のみ）
 ```
+
+#### **Lambda関数のログ記録方針**
+
+**記録すべき情報:**
+
+```javascript
+✅ Lambda関数名
+✅ リクエストID（AWS自動付与）
+✅ 実行時間
+✅ エラー内容（スタックトレース含む）
+✅ 処理結果（成功/失敗）
+✅ DynamoDB/S3操作の結果
+✅ ユーザーID（Cognitoのsub）
+
+❌ パスワード
+❌ トークン（JWT等）
+❌ リクエストボディ全体（個人情報含む可能性）
+❌ Pre-signed URL（一時的だが、ログに残すべきでない）
+```
+
+**ログの例（推奨）:**
+
+```javascript
+// 成功時（INFO）
+{
+  "level": "INFO",
+  "timestamp": "2026-02-10T12:00:00Z",
+  "function": "get-posts",
+  "requestId": "abc-123-def",
+  "userId": "cognito-sub-12345",
+  "action": "GetPosts",
+  "result": "success",
+  "itemCount": 10,
+  "duration": 245
+}
+
+// エラー時（ERROR）
+{
+  "level": "ERROR",
+  "timestamp": "2026-02-10T12:01:00Z",
+  "function": "create-post",
+  "requestId": "xyz-456-ghi",
+  "userId": "cognito-sub-12345",
+  "action": "CreatePost",
+  "result": "error",
+  "error": {
+    "type": "DynamoDBException",
+    "message": "Conditional check failed",
+    "code": "ConditionalCheckFailedException"
+  },
+  "stackTrace": "..."
+}
+```
+
+#### **ログ保持期間**
+
+| ログタイプ | 保持期間 | 理由 |
+|-----------|---------|------|
+| Lambda実行ログ | 30日 | トラブルシューティングに十分 |
+| API Gatewayアクセスログ | 14日 | アクセスパターン分析用 |
+| CloudFront アクセスログ | 7日 | 大量ログを避けるため短期間 |
+
+**コスト考慮:**
+- 30日保持でも個人ブログ規模なら月$1以下
+- 不要な詳細ログは記録しない（コスト削減）
+
+#### **セキュリティ上の注意**
+
+**❌ 記録してはいけない情報:**
+1. **認証トークン**: JWT、アクセストークン、リフレッシュトークン
+2. **パスワード**: ハッシュ化前のパスワード
+3. **個人識別情報**: メールアドレス、電話番号（必要最小限のみ）
+4. **APIキー**: 外部サービスのAPIキー
+5. **Pre-signed URL**: 一時的だが悪用される可能性
+
+**✅ 記録して良い情報:**
+1. **ユーザーID**: CognitoのSub（UUID）
+2. **操作内容**: 記事作成、更新、削除
+3. **タイムスタンプ**: いつ実行されたか
+4. **エラー情報**: エラーメッセージ、スタックトレース
+
+---
+
+### 9.4 アラート設定
+
+#### **CloudWatch Alarms 設定**
+
+**1. Lambda Error Rate Alarm（Critical）**
+```typescript
+new cloudwatch.Alarm(this, 'LambdaErrorAlarm', {
+  metric: lambdaFunction.metricErrors({
+    statistic: 'Sum',
+    period: cdk.Duration.minutes(5),
+  }),
+  threshold: 5,  // 5分間で5回以上エラー
+  evaluationPeriods: 1,
+  comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+  alarmDescription: 'Lambda function error rate is too high',
+  treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+});
+```
+
+**2. API Gateway 5XX Alarm（Critical）**
+```typescript
+new cloudwatch.Alarm(this, 'ApiGateway5XXAlarm', {
+  metric: api.metricServerError({
+    statistic: 'Sum',
+    period: cdk.Duration.minutes(5),
+  }),
+  threshold: 10,
+  evaluationPeriods: 1,
+  alarmDescription: 'API Gateway 5XX error rate is high',
+});
+```
+
+**3. DynamoDB Throttle Alarm（Warning）**
+```typescript
+new cloudwatch.Alarm(this, 'DynamoDBThrottleAlarm', {
+  metric: table.metricUserErrors({
+    statistic: 'Sum',
+    period: cdk.Duration.minutes(15),
+  }),
+  threshold: 100,
+  evaluationPeriods: 1,
+  alarmDescription: 'DynamoDB is being throttled',
+});
+```
+
+#### **通知方法**
+
+**個人ブログでの推奨:**
+- **SNS Topic** → メール通知
+- Slackや他のサービスは過剰（個人ブログには不要）
+
+```typescript
+const alarmTopic = new sns.Topic(this, 'AlarmTopic', {
+  displayName: 'MyBlog Alarms',
+});
+
+alarmTopic.addSubscription(
+  new snsSubscriptions.EmailSubscription('your-email@example.com')
+);
+
+// アラームに通知先を設定
+alarm.addAlarmAction(new cloudwatchActions.SnsAction(alarmTopic));
+```
+
+---
+
+### 9.5 CloudWatch Dashboard
+
+#### **個人ブログ向けシンプルダッシュボード**
+
+**含めるべきウィジェット:**
+
+1. **Lambda実行統計**
+   - Invocations（実行回数）
+   - Errors（エラー数）
+   - Duration（実行時間）
+
+2. **API Gatewayメトリクス**
+   - Count（リクエスト数）
+   - 4XXError, 5XXError
+   - Latency（レイテンシー）
+
+3. **DynamoDBメトリクス**
+   - ConsumedReadCapacityUnits
+   - ConsumedWriteCapacityUnits
+   - UserErrors（スロットリング）
+
+4. **CloudFrontメトリクス**
+   - Requests（リクエスト数）
+   - BytesDownloaded（データ転送量）
+   - CacheHitRate（キャッシュヒット率）
+
+**更新頻度:**
+- 週1回の確認で十分（個人ブログ）
+- アラートが来た時に詳細を確認
+
+---
+
+### 9.6 実装の優先順位
+
+| 優先度 | 項目 | 理由 |
+|--------|------|------|
+| 高 | Lambda Error Alarm | サービス障害の早期発見 |
+| 高 | CloudWatch Logsの適切な設定 | トラブルシューティング必須 |
+| 中 | API Gateway 5XX Alarm | バックエンド全体の健全性確認 |
+| 中 | CloudWatch Dashboard | 傾向把握 |
+| 低 | DynamoDB Throttle Alarm | 個人ブログでは滅多に発生しない |
+| 低 | 詳細なパフォーマンス監視 | 過剰 |
+
+---
+
+### 9.7 コスト試算
+
+**個人ブログ（月間10,000PV）:**
+```
+CloudWatch Alarms: 3個 × $0.10 = $0.30/月
+CloudWatch Logs: 1GB × $0.50 = $0.50/月
+CloudWatch Dashboard: 1個 × $3 = $3/月（オプション）
+────────────────────────────────────
+合計: 約$0.80/月（Dashboard除く）
+```
+
+**推奨:**
+- Alarms: 必須（$0.30/月）
+- Logs: 必須（$0.50/月）
+- Dashboard: オプション（CloudWatchコンソールで十分）
 
 ---
 
 ## 10. ディザスタリカバリ（災害復旧）
 
-### 10.1 【あなたが考えてください】バックアップ戦略
+### 10.1 バックアップ戦略
 
-> **🚨 考えるべきポイント:**
->
-> 最悪の事態を想定しましょう：
-> - 誤ってDynamoDBテーブルを削除してしまった
-> - S3バケットのファイルを全て削除してしまった
->
-> **質問：**
-> - どうやってデータを復旧しますか？
-> - バックアップは必要？必要なら、どのくらいの頻度で取る？
-> - AWS Backupを使う？DynamoDBのポイントインタイムリカバリ？
+個人ブログにおける現実的なバックアップ戦略を設計します。**過度なバックアップは不要**ですが、**最低限のデータ保護**は必要です。
 
-#### バックアップ戦略
+---
+
+### 10.2 DynamoDB バックアップ戦略
+
+#### **選択肢の比較**
+
+| 方法 | コスト | 復旧時間 | 保持期間 | 推奨度 |
+|------|--------|---------|---------|--------|
+| On-Demand Backup | 低 | 数分 | 無期限 | ⭐⭐⭐ |
+| Point-in-Time Recovery (PITR) | 中 | 数分 | 35日 | ⭐⭐⭐⭐⭐ |
+| AWS Backup | 中 | 数分 | カスタマイズ可 | ⭐⭐ |
+
+#### **推奨：Point-in-Time Recovery（PITR）**
+
+**理由:**
+- 任意の時点（過去35日以内）に復旧可能
+- 継続的なバックアップ（自動）
+- 誤操作からの迅速な復旧
+- コスト：テーブルサイズに応じて課金（小規模なら月$1以下）
+
+**設定:**
+```typescript
+const table = new dynamodb.Table(this, 'PostsTable', {
+  tableName: 'myblog-prod-dynamodb-posts',
+  pointInTimeRecovery: true,  // PITR有効化
+  removalPolicy: cdk.RemovalPolicy.RETAIN,  // 削除保護
+});
+```
+
+**復旧手順:**
+```
+1. AWSコンソールでDynamoDBテーブルを選択
+2. "バックアップ" → "ポイントインタイムリカバリ" を選択
+3. 復旧したい日時を指定
+4. 新しいテーブル名で復元（例：myblog-prod-dynamodb-posts-restored）
+5. アプリケーションの設定を更新して新テーブルに切り替え
+6. 動作確認後、旧テーブルを削除
+```
+
+**コスト試算:**
+```
+DynamoDBテーブルサイズ: 100MB（記事100件想定）
+PITRコスト: $0.20/GB/月 × 0.1GB = $0.02/月
+
+年間コスト: 約$0.24（ほぼ無料）
+```
+
+#### **代替案：On-Demand Backup（手動）**
+
+**使用ケース:**
+- 重要な変更前に手動バックアップ
+- 例：大規模なデータ移行、構造変更前
+
+**設定:**
+```bash
+# AWS CLIで手動バックアップ
+aws dynamodb create-backup \
+  --table-name myblog-prod-dynamodb-posts \
+  --backup-name myblog-backup-$(date +%Y%m%d)
+```
+
+---
+
+### 10.3 S3 バックアップ戦略
+
+#### **選択肢の比較**
+
+| 方法 | コスト | 使いやすさ | データ保護 | 推奨度 |
+|------|--------|-----------|-----------|--------|
+| バージョニング | 低 | 高 | 高 | ⭐⭐⭐⭐⭐ |
+| クロスリージョンレプリケーション | 高 | 中 | 最高 | ⭐⭐ |
+| AWS Backup | 中 | 中 | 高 | ⭐⭐⭐ |
+
+#### **推奨：S3バージョニング**
+
+**理由:**
+- 誤削除・上書きから保護
+- 自動的に全バージョンを保存
+- 復旧が簡単（コンソールまたはCLI）
+- コスト：削除されたバージョンの分だけ追加課金
+
+**設定:**
+```typescript
+const mediaBucket = new s3.Bucket(this, 'MediaBucket', {
+  bucketName: 'myblog-prod-s3-media',
+  versioned: true,  // バージョニング有効化
+  lifecycleRules: [
+    {
+      // 古いバージョンは30日後に削除
+      noncurrentVersionExpiration: cdk.Duration.days(30),
+    },
+    {
+      // 削除マーカーの自動削除
+      expiredObjectDeleteMarker: true,
+    },
+  ],
+  removalPolicy: cdk.RemovalPolicy.RETAIN,  // 削除保護
+});
+```
+
+**復旧手順:**
+```
+誤削除した場合:
+1. AWSコンソールでS3バケットを開く
+2. "バージョンの表示"を有効化
+3. 削除されたファイルを見つける
+4. "復元"をクリック
+
+誤って上書きした場合:
+1. バージョンリストから正しいバージョンを選択
+2. ダウンロードして確認
+3. "復元"または手動で再アップロード
+```
+
+**コスト試算:**
+```
+画像ファイル: 500MB
+月次更新: 50MB追加
+古いバージョン保持: 30日
+
+追加コスト: 
+- 現行バージョン: 500MB × $0.023/GB = $0.012/月
+- 古いバージョン: 50MB × $0.023/GB = $0.001/月
+合計: 約$0.013/月
+
+年間コスト: 約$0.16（ほぼ無料）
+```
+
+---
+
+### 10.4 Cognito バックアップ
+
+**結論：バックアップ不要**
+
+**理由:**
+- 個人ブログでは管理者1名のみ
+- 削除されても再作成が簡単（数分）
+- パスワードリセット機能で対応可能
+
+**対策:**
+- パスワードマネージャーで認証情報を管理
+- MFAを有効化（アカウント乗っ取り防止）
+
+---
+
+### 10.5 インフラ（CDK）のバックアップ
+
+**推奨：Git + GitHub**
 
 ```
-DynamoDB:
-方法：?
-頻度：?
-保持期間：?
-
-S3:
-方法：?（バージョニング? AWS Backup?）
-理由：?
-
-復旧手順（簡単に）:
-1. ?
-2. ?
+1. すべてのCDKコードをGitで管理
+2. GitHubにプッシュ（プライベートリポジトリ）
+3. 重要な変更前にブランチ作成
+4. タグで各デプロイバージョンを管理
 ```
+
+**復旧手順:**
+```
+インフラ全体を再構築する場合:
+1. GitHubからCDKコードをクローン
+2. `cdk deploy --all`で全リソースを再作成
+3. DynamoDBをPITRから復元
+4. S3バケットのバージョニングから復元
+5. DNS設定の確認
+```
+
+---
+
+### 10.6 災害復旧の優先順位
+
+#### **RPO（Recovery Point Objective）- データ損失許容時間**
+
+| リソース | RPO | 理由 |
+|---------|-----|------|
+| DynamoDB | 1秒 | PITRで秒単位の復旧可能 |
+| S3 | 即時 | バージョニングで即時復旧 |
+| Lambda/API Gateway | なし | ステートレス、再デプロイで復旧 |
+| CloudFront | なし | 再作成で復旧（15-30分） |
+
+#### **RTO（Recovery Time Objective）- 復旧目標時間**
+
+| シナリオ | RTO | 復旧手順 |
+|---------|-----|---------|
+| Lambda関数エラー | 5分 | 前のバージョンにロールバック |
+| DynamoDB誤削除 | 30分 | PITRから復元 |
+| S3誤削除 | 5分 | バージョニングから復元 |
+| インフラ全削除 | 2時間 | CDKから再構築 + データ復元 |
+
+---
+
+### 10.7 定期的なテスト
+
+**バックアップ戦略は機能しているか？**
+
+**推奨テストスケジュール:**
+
+| テスト内容 | 頻度 | 目的 |
+|-----------|------|------|
+| DynamoDB PITR復元テスト | 半年に1回 | 復旧手順の確認 |
+| S3バージョン復元テスト | 3ヶ月に1回 | 復旧手順の確認 |
+| CDK再デプロイテスト | 3ヶ月に1回 | インフラ再構築の確認 |
+
+**テスト手順:**
+```
+1. 開発環境で実施（本番環境ではテストしない）
+2. バックアップから復元
+3. データの整合性を確認
+4. 所要時間を記録
+5. 問題点を文書化
+```
+
+---
+
+### 10.8 削除保護設定
+
+**重要なリソースに削除保護を設定:**
+
+```typescript
+// DynamoDB
+const table = new dynamodb.Table(this, 'PostsTable', {
+  removalPolicy: cdk.RemovalPolicy.RETAIN,  // CDK削除時も保持
+  deletionProtection: true,  // コンソールからの削除も防止
+});
+
+// S3
+const bucket = new s3.Bucket(this, 'MediaBucket', {
+  removalPolicy: cdk.RemovalPolicy.RETAIN,
+  autoDeleteObjects: false,  // バケット削除時も内容を保持
+});
+
+// Route53 HostedZone
+const hostedZone = new route53.HostedZone(this, 'HostedZone', {
+  zoneName: 'shimizuhayato-myblog-aws.com',
+  // HostedZoneは手動管理を推奨（誤削除防止）
+});
+```
+
+---
+
+### 10.9 コスト試算
+
+**個人ブログのバックアップコスト:**
+```
+DynamoDB PITR: $0.02/月
+S3バージョニング: $0.013/月
+────────────────────────
+合計: 約$0.03/月
+
+年間コスト: 約$0.36（50円以下）
+```
+
+**結論：**
+- 年間50円以下でデータ保護が可能
+- PITRとバージョニングは**必須**
+- ROIが非常に高い投資
+
+---
+
+### 10.10 実装チェックリスト
+
+- [ ] DynamoDB PITRを有効化
+- [ ] S3バージョニングを有効化
+- [ ] 削除保護（removalPolicy: RETAIN）を設定
+- [ ] CDKコードをGitHubにプッシュ
+- [ ] 復旧手順書を作成
+- [ ] 半年に1回の復旧テスト計画
 
 ---
 

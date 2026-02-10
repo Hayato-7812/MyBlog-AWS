@@ -558,4 +558,234 @@ environment: {
 
 ---
 
+---
+
+## 16. Route53実装のステップバイステップ
+
+### 初期段階（Phase 1-2）
+
+**推奨:** CloudFrontデフォルトドメインのみ
+
+```
+実装:
+- DataStack: Route53なし
+- AppStack: CloudFrontデフォルトドメイン
+
+出力例: https://d111111abcdef8.cloudfront.net
+
+理由:
+✅ コスト削減（月$0.50削減）
+✅ 設定がシンプル
+✅ 動作確認に集中できる
+✅ 後でドメイン追加は簡単
+```
+
+---
+
+### 本番リリース前（Phase 3）
+
+**推奨:** 独自ドメイン追加
+
+```
+実装:
+- DataStack: Route53 HostedZone追加
+- AppStack: 独自ドメイン設定
+
+理由:
+✅ ブランディング
+✅ SEO対策
+✅ 信頼性向上
+✅ 本格運用に備える
+```
+
+---
+
+### 実装ステップ
+
+#### **Step 1: 初期段階（今）**
+
+```bash
+# DataStack実装（Route53なし）
+# AppStack実装（CloudFrontデフォルトドメイン）
+
+# 動作確認
+curl -I https://d111111abcdef8.cloudfront.net
+
+# フロントエンド開発
+```
+
+---
+
+#### **Step 2: ドメイン取得（任意）**
+
+**Option A: Route53でドメイン購入**
+
+```
+1. AWSコンソール → Route53 → ドメイン登録
+2. ドメイン購入（$12/年〜）
+3. HostedZoneが自動作成される
+4. CDKでHostedZoneを参照
+```
+
+**Option B: 他社ドメインをRoute53で管理**
+
+```
+1. お名前.com等でドメイン購入
+2. Route53でHostedZone作成
+3. NSレコードを取得
+4. ドメインレジストラでNSレコードを変更
+5. DNS浸透を待つ（最大48時間）
+```
+
+---
+
+#### **Step 3: DataStack更新**
+
+```typescript
+// bin/myblog-aws.ts
+const dataStack = new DataStack(app, 'MyBlog-DataStack', {
+  env,
+  domainName: 'myblog-example.com',  // 追加
+});
+```
+
+```bash
+# デプロイ
+npm run build
+npx cdk deploy MyBlog-DataStack --profile myblog-dev
+```
+
+---
+
+#### **Step 4: ACM証明書作成**
+
+**重要:** CloudFrontはus-east-1の証明書が必須
+
+```bash
+# us-east-1で証明書リクエスト
+aws acm request-certificate \
+  --domain-name myblog-example.com \
+  --subject-alternative-names "*.myblog-example.com" \
+  --validation-method DNS \
+  --region us-east-1 \
+  --profile myblog-dev
+
+# 検証用DNSレコードをRoute53に追加（自動化推奨）
+# 検証完了を待つ（数分〜数時間）
+
+# 証明書ARNを取得
+aws acm list-certificates --region us-east-1 --profile myblog-dev
+```
+
+**自動化（CDK）:**
+
+```typescript
+// DataStackに追加
+if (props.domainName && this.hostedZone) {
+  // CloudFront用（us-east-1）
+  const cloudfrontCert = new acm.Certificate(this, 'CloudFrontCert', {
+    domainName: props.domainName,
+    subjectAlternativeNames: [`*.${props.domainName}`],
+    validation: acm.CertificateValidation.fromDns(this.hostedZone),
+    region: 'us-east-1',  // 必須
+  });
+  
+  // API Gateway用（デプロイリージョン）
+  const apiCert = new acm.Certificate(this, 'ApiCert', {
+    domainName: `api.${props.domainName}`,
+    validation: acm.CertificateValidation.fromDns(this.hostedZone),
+  });
+}
+```
+
+---
+
+#### **Step 5: AppStack更新**
+
+```typescript
+// bin/myblog-aws.ts
+const appStack = new AppStack(app, 'MyBlog-AppStack', {
+  env,
+  dataStack,
+  domainName: 'myblog-example.com',
+  certificateArn: 'arn:aws:acm:us-east-1:...',  // ACM証明書ARN
+});
+```
+
+```typescript
+// lib/app-stack.ts
+const distribution = new cloudfront.Distribution(this, 'Distribution', {
+  domainNames: domainName ? [domainName, `www.${domainName}`] : undefined,
+  certificate: props.certificateArn 
+    ? acm.Certificate.fromCertificateArn(this, 'Cert', props.certificateArn)
+    : undefined,
+  // ...
+});
+
+// Route53 Aliasレコード
+if (domainName && dataStack.hostedZone) {
+  // Apex（example.com）
+  new route53.ARecord(this, 'ApexRecord', {
+    zone: dataStack.hostedZone,
+    target: route53.RecordTarget.fromAlias(
+      new targets.CloudFrontTarget(distribution)
+    ),
+  });
+  
+  // www（www.example.com）
+  new route53.ARecord(this, 'WwwRecord', {
+    zone: dataStack.hostedZone,
+    recordName: 'www',
+    target: route53.RecordTarget.fromAlias(
+      new targets.CloudFrontTarget(distribution)
+    ),
+  });
+}
+```
+
+```bash
+# デプロイ
+npm run build
+npx cdk deploy MyBlog-AppStack --profile myblog-dev
+```
+
+---
+
+#### **Step 6: 動作確認**
+
+```bash
+# DNS確認
+nslookup myblog-example.com
+
+# アクセステスト
+curl -I https://myblog-example.com
+
+# 期待される結果:
+# HTTP/2 200
+# server: CloudFront
+```
+
+---
+
+### コスト
+
+```
+Route53:
+- HostedZone: $0.50/月（固定費）
+- クエリ: 最初の10億クエリは$0.40/100万クエリ
+- Aliasレコード: 無料
+
+ドメイン:
+- .com: $12/年
+- .net: $11/年
+- .jp: $40/年
+
+ACM証明書:
+- 無料
+
+合計: 約$0.50/月 + ドメイン代
+```
+
+---
+
 **このドキュメントを基にCDK実装を開始できます。**

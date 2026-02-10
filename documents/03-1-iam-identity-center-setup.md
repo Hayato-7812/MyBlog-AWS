@@ -282,20 +282,34 @@ IAM Identity Center有効化画面で以下のメッセージが表示されま�
    - 「Enable AWS Organizations」をクリック（必要に応じて）
    - 組織インスタンスが作成されます（推奨）
 
-4. 完了を待つ（数分かかる場合があります）
+4. **完了を待つ**
+   - 有効化には数分かかる場合があります
+   - 完了すると、IAM Identity Centerのダッシュボードに遷移します
 
-### 1-3. ディレクトリの選択
+### 1-3. 有効化完了の確認
 
-**推奨: Identity Center directory**
+**ダッシュボードで以下を確認:**
+
 ```
-- 小規模プロジェクトに最適
-- 追加コストなし
-- セットアップが簡単
+✅ 「IAM Identity Center の組織インスタンスが正常に作成されました」
+   という緑色の成功メッセージが表示される
+
+✅ 設定の概要に以下が表示される:
+   - アイデンティティソース: Identity Center ディレクトリ
+   - プライマリリージョン: us-east-1
+   - 組織 ID: o-xxxxxxxxxx
+   - 発行者 URL: https://identitycenter.amazonaws.com/ssoins-xxxxx
 ```
 
-**他の選択肢（本プロジェクトでは不要）:**
-- Active Directory
-- External identity provider
+**重要: ディレクトリは自動作成される**
+```
+Identity Center ディレクトリは自動的に作成されます。
+ディレクトリを選択する画面は表示されません。
+
+後から変更したい場合（通常は不要）:
+- 設定 → アイデンティティソース → 変更
+- Active DirectoryやExternal identity providerに変更可能
+```
 
 ---
 

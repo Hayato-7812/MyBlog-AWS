@@ -57,25 +57,35 @@ export class DataStack extends cdk.Stack {
         { key: 'ManagedBy', value: 'CDK' },
       ],
 
-      // GSI1: タグの逆引き用
+      // GSI1: 汎用逆引きインデックス
+      // 用途:
+      // 1. タグ検索: sk='TAG#xxx' で検索（一般ユーザー・管理者）
+      // 2. ステータス検索: sk='STATUS#xxx' で検索（主に管理者画面）
+      // 例: 
+      //   - Query(pk='TAG#AWS') → タグ「AWS」の記事一覧
+      //   - Query(pk='STATUS#published') → 公開済み記事一覧
+      //   - Query(pk='STATUS#draft') → 下書き記事一覧（管理者用）
       globalSecondaryIndexes: [
         {
-          indexName: 'gsi1-tag-index',
+          indexName: 'GSI1',  // 汎用逆引きインデックス
           
-          // PKとSKを逆転させてタグから記事を検索
+          // PKとSKを反転させて逆引き検索を可能にする
+          // ベーステーブルの sk → GSI1 の pk
+          // ベーステーブルの pk → GSI1 の sk
           partitionKey: { 
-            name: 'sk', 
+            name: 'sk',  // ベーステーブルのSK（TAG#xxx, STATUS#xxx等）
             type: dynamodb.AttributeType.STRING 
           },
           sortKey: { 
-            name: 'pk', 
+            name: 'pk',  // ベーステーブルのPK（POST#xxx）
             type: dynamodb.AttributeType.STRING 
           },
 
-          // 射影（Projection）: 必要な属性のみを含める
-          // 設計ドキュメントに基づき、title, status, createdAt を含める
+          // 射影（Projection）: 一覧表示に必要な属性のみを含める
+          // title, status, createdAt, summary, thumbnail を投影
+          // これにより、記事一覧表示時に追加のGetItemが不要になる
           projectionType: dynamodb.ProjectionType.INCLUDE,
-          nonKeyAttributes: ['title', 'status', 'createdAt', 'thumbnail'],
+          nonKeyAttributes: ['title', 'status', 'createdAt', 'summary', 'thumbnail'],
         },
       ],
     })

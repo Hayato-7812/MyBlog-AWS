@@ -119,11 +119,33 @@ ER図の関係性を踏まえ、以下のようなプレフィックスを用い
 
 ### 3.2 インデックス設計 (GSI)
 
-* **GSI1 (タグ逆引き用)**:
-* **PK**: `SK` (例: `TAG#AWS`)
-* **SK**: `PK` (例: `POST#001`)
-* **目的**: 特定のタグを持つ記事を  で検索する。
-* **射影 (Projection)**: `INCLUDE` (`title`, `status`, `createdAt`)。一覧表示に必要な属性のみを投影し、コストを最適化する。
+* **GSI1 (汎用逆引きインデックス)**:
+* **PK**: `sk` (ベーステーブルのSK)
+* **SK**: `pk` (ベーステーブルのPK)
+* **目的**: 
+  * **タグ検索**: 特定のタグを持つ記事を効率的に検索する（例: `TAG#AWS`）
+  * **ステータス検索**: 特定のステータスの記事を効率的に検索する（例: `STATUS#published`, `STATUS#draft`）
+* **射影 (Projection)**: `INCLUDE` (`title`, `status`, `createdAt`, `summary`, `thumbnail`)。一覧表示に必要な属性のみを投影し、コストを最適化する。
+
+#### GSI1の使用例
+
+##### 1. タグ検索（一般ユーザー・管理者）
+```
+Query(GSI1_PK="TAG#AWS")
+→ タグ「AWS」が付いた記事一覧を取得
+```
+
+##### 2. ステータス検索（主に管理者）
+```
+Query(GSI1_PK="STATUS#published")
+→ 公開済み記事一覧を取得
+
+Query(GSI1_PK="STATUS#draft")
+→ 下書き記事一覧を取得（管理者画面）
+
+Query(GSI1_PK="STATUS#archived")
+→ アーカイブ記事一覧を取得
+```
 
 
 物理設計のプレフィックスを用いた、具体的なベーステーブルのデータイメージを示す。
@@ -131,15 +153,68 @@ ER図の関係性を踏まえ、以下のようなプレフィックスを用い
 
 ### ベーステーブルのデータレイアウト例
 
-例えば、PostIDが `p123` の記事に、2つの本文ブロック（画像とテキスト）があり、タグが2つ付いている場合のイメージだ。
+例えば、PostIDが `p123` の公開済み記事に、2つの本文ブロック（画像とテキスト）があり、タグが2つ付いている場合のイメージだ。
 
-| PK (Partition Key) | SK (Sort Key) | title / type | content / status | layout |
+| PK (Partition Key) | SK (Sort Key) | title / type | content / status | layout | summary |
+| --- | --- | --- | --- | --- | --- |
+| `POST#p123` | `METADATA` | アイルランド移住記 | `published` | - | アイルランドへの移住体験記 |
+| `POST#p123` | `STATUS#published` | アイルランド移住記 | `published` | - | アイルランドへの移住体験記 |
+| `POST#p123` | `BLOCK#00001` | `image` | `https://s3.../img.jpg` | `half_left` | - |
+| `POST#p123` | `BLOCK#00002` | `text` | ダブリンに到着しました... | `half_right` | - |
+| `POST#p123` | `TAG#Ireland` | - | - | - | - |
+| `POST#p123` | `TAG#Travel` | - | - | - | - |
+
+**注意点:**
+- `STATUS#published` アイテムは、GSI1によるステータス検索を効率化するために追加される
+- このアイテムは記事作成時・ステータス変更時に自動的に更新される
+- `BLOCK#` のOrderは5桁ゼロ埋め（例: `BLOCK#00001`, `BLOCK#00123`）でソート順を保証
+
+### GSI1のデータレイアウト例
+
+GSI1は、ベーステーブルのPKとSKを反転させた汎用逆引きインデックスだ。
+同じ記事（`POST#p123`）が、GSI1ではどのように見えるかを示す。
+
+| PK (GSI1_PK) | SK (GSI1_SK) | title | status | createdAt | summary | thumbnail |
+| --- | --- | --- | --- | --- | --- | --- |
+| `STATUS#published` | `POST#p123` | アイルランド移住記 | `published` | 2024-01-15T10:00:00Z | アイルランドへの移住体験記 | https://s3.../thumb.jpg |
+| `TAG#Ireland` | `POST#p123` | アイルランド移住記 | `published` | 2024-01-15T10:00:00Z | アイルランドへの移住体験記 | https://s3.../thumb.jpg |
+| `TAG#Travel` | `POST#p123` | アイルランド移住記 | `published` | 2024-01-15T10:00:00Z | アイルランドへの移住体験記 | https://s3.../thumb.jpg |
+
+**注意点:**
+- ベーステーブルの `sk` → GSI1の `pk`（逆引きキー）
+- ベーステーブルの `pk` → GSI1の `sk`（記事ID）
+- `METADATA` と `BLOCK#xxx` はGSI1に現れない（射影対象外）
+- 射影属性（`title`, `status`, `createdAt`, `summary`, `thumbnail`）のみが含まれる
+
+**複数の記事がある場合のGSI1イメージ:**
+
+| PK (GSI1_PK) | SK (GSI1_SK) | title | status | createdAt |
 | --- | --- | --- | --- | --- |
-| `POST#p123` | `METADATA` | アイルランド移住記 | `Published` | - |
-| `POST#p123` | `BLOCK#001` | `image` | `https://s3.../img.jpg` | `half_left` |
-| `POST#p123` | `BLOCK#002` | `text` | ダブリンに到着しました... | `half_right` |
-| `POST#p123` | `TAG#Ireland` | - | - | - |
-| `POST#p123` | `TAG#Travel` | - | - | - |
+| `STATUS#published` | `POST#p123` | アイルランド移住記 | `published` | 2024-01-15T10:00:00Z |
+| `STATUS#published` | `POST#p456` | AWS CDK入門 | `published` | 2024-01-20T14:30:00Z |
+| `STATUS#published` | `POST#p789` | TypeScript Tips | `published` | 2024-01-25T09:15:00Z |
+| `STATUS#draft` | `POST#p124` | 次の記事の下書き | `draft` | 2024-01-26T11:00:00Z |
+| `TAG#AWS` | `POST#p456` | AWS CDK入門 | `published` | 2024-01-20T14:30:00Z |
+| `TAG#AWS` | `POST#p789` | TypeScript Tips | `published` | 2024-01-25T09:15:00Z |
+| `TAG#Ireland` | `POST#p123` | アイルランド移住記 | `published` | 2024-01-15T10:00:00Z |
+| `TAG#Travel` | `POST#p123` | アイルランド移住記 | `published` | 2024-01-15T10:00:00Z |
+| `TAG#TypeScript` | `POST#p789` | TypeScript Tips | `published` | 2024-01-25T09:15:00Z |
+
+このレイアウトにより、以下のクエリが効率的に実行できる:
+
+```typescript
+// 公開済み記事一覧
+Query(GSI1_PK="STATUS#published")
+→ POST#p123, POST#p456, POST#p789
+
+// 下書き記事一覧（管理者用）
+Query(GSI1_PK="STATUS#draft")
+→ POST#p124
+
+// タグ「AWS」の記事一覧
+Query(GSI1_PK="TAG#AWS")
+→ POST#p456, POST#p789
+```
 
 #### このレイアウトによるクエリの動作
 

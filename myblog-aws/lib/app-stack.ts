@@ -4,6 +4,8 @@ import { DataStack } from './data-stack';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 
 
 // AppStackのプロパティにDataStackを含める
@@ -104,6 +106,32 @@ export class AppStack extends cdk.Stack {
       comment: 'CloudFront Distribution for MyBlog frontend',
     });
 
+    // ==========================================================
+    // Lambda関数（get-posts）
+    // ==========================================================
+    const getPostsFunction = new lambdaNodejs.NodejsFunction(
+      this,
+      'GetPostsFunction',
+      {
+        entry: 'lambda/get-posts/index.ts',
+        handler: 'handler',
+        runtime: lambda.Runtime.NODEJS_18_X,
+        timeout: cdk.Duration.seconds(10),
+        memorySize: 128,
+        environment: {
+          TABLE_NAME: props.dataStack.blogTable.tableName,
+          REGION: cdk.Stack.of(this).region,
+          ALLOWED_ORIGIN: '*',  // Phase 1: すべてのドメインを許可
+        },
+        bundling: {
+          minify: true,
+          externalModules: ['aws-sdk'],
+        },
+      }
+    );
+
+    // DynamoDB読み取り権限を付与
+    props.dataStack.blogTable.grantReadData(getPostsFunction);
 
     // ==========================================================
     // CloudFormation出力
@@ -131,6 +159,16 @@ export class AppStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'DistributionDomainName', {
       value: this.distribution.distributionDomainName,
       description: 'CloudFront Distribution Domain Name (website URL)',
+    });
+
+    new cdk.CfnOutput(this, 'GetPostsFunctionName', {
+      value: getPostsFunction.functionName,
+      description: 'Get Posts Lambda function name',
+    });
+
+    new cdk.CfnOutput(this, 'GetPostsFunctionArn', {
+      value: getPostsFunction.functionArn,
+      description: 'Get Posts Lambda function ARN',
     });
   }
 }

@@ -360,11 +360,12 @@ Authorization: Bearer <JWT_TOKEN>
 ```json
 {
   "title": "新しい記事タイトル",
-  "thumbnail": "https://cloudfront.../new-thumb.jpg",
+  "summary": "記事の要約（必須）",
+  "thumbnailUrl": "https://cloudfront.../new-thumb.jpg",
   "status": "draft",
-  "contentBlocks": [
+  "content": [
     {
-      "order": 1,
+      "order": 0,
       "type": "text",
       "content": "記事の本文...",
       "layout": "full"
@@ -373,6 +374,8 @@ Authorization: Bearer <JWT_TOKEN>
   "tags": ["NewTag", "Sample"]
 }
 ```
+
+**注意:** 実装では `content` フィールド名を使用します（`contentBlocks` ではありません）。
 
 #### レスポンス（201 Created）
 ```json
@@ -429,11 +432,12 @@ Authorization: Bearer <JWT_TOKEN>
 ```json
 {
   "title": "更新されたタイトル",
-  "thumbnail": "https://cloudfront.../updated-thumb.jpg",
+  "summary": "更新された要約",
+  "thumbnailUrl": "https://cloudfront.../updated-thumb.jpg",
   "status": "published",
-  "contentBlocks": [
+  "content": [
     {
-      "order": 1,
+      "order": 0,
       "type": "text",
       "content": "更新された本文...",
       "layout": "full"

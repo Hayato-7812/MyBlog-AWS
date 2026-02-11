@@ -159,31 +159,68 @@ e2e/*.spec.ts
 # jq（JSONパーサー）のインストール
 brew install jq  # macOS
 sudo apt install jq  # Linux
+```
 
-# JWTトークンの取得
-aws cognito-idp admin-initiate-auth \
+#### セットアップ（初回のみ）
+
+```bash
+# 1. CDKデプロイ後、環境変数を自動同期
+./scripts/sync-env.sh
+
+# 自動的に.envファイルが生成され、以下が設定される:
+# - API_URL
+# - COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID
+# - DYNAMODB_TABLE_NAME
+# - MEDIA_BUCKET_NAME, MEDIA_CLOUDFRONT_DOMAIN
+# - FRONTEND_BUCKET_NAME, FRONTEND_CLOUDFRONT_DOMAIN
+# - AWS_REGION
+
+# 2. テストユーザーのパスワードを.envに設定
+vi .env
+# TEST_USER_PASSWORD=YourSecurePassword123!
+
+# 3. テストスクリプトに実行権限付与
+chmod +x tests/api-test.sh
+```
+
+#### 実行（自動ログイン）
+
+```bash
+# シンプル実行（推奨）
+# .envファイルから自動的に設定を読み込み、Cognito認証も自動実行
+./tests/api-test.sh
+```
+
+**自動実行される処理:**
+1. .envファイル読み込み
+2. JWT_TOKENがない場合、Cognito自動ログイン
+3. 全8エンドポイントのテスト実行
+4. 記事作成 → 更新 → 削除の一連フロー
+
+**JWT トークンの有効期限:**
+- IDトークン: **1時間**
+- アクセストークン: **1時間**
+- リフレッシュトークン: **30日**
+
+テストスクリプトは自動的にトークンの有効期限を表示します。
+
+#### 手動JWT設定（オプション）
+
+```bash
+# 手動でJWTトークンを取得して使用する場合
+export JWT_TOKEN=$(aws cognito-idp admin-initiate-auth \
   --user-pool-id ap-northeast-1_aMvLFicqR \
   --client-id 1ppe419ddmqtl8hrerrbjeij37 \
   --auth-flow ADMIN_NO_SRP_AUTH \
   --auth-parameters USERNAME=your-email@example.com,PASSWORD=YourPassword \
   --profile myblog-dev \
   --query 'AuthenticationResult.IdToken' \
-  --output text
-```
+  --output text)
 
-#### 実行
-
-```bash
-# 1. JWT トークンを環境変数に設定
-export JWT_TOKEN='eyJhbGciOiJSUzI1NiIs...'
-
-# 2. テストスクリプトに実行権限付与（初回のみ）
-chmod +x tests/api-test.sh
-
-# 3. テスト実行
+# テスト実行
 ./tests/api-test.sh
 
-# 4. カスタムAPI URLでのテスト（オプション）
+# カスタムAPI URLでのテスト
 API_URL=https://custom-api.example.com/prod ./tests/api-test.sh
 ```
 

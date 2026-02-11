@@ -285,66 +285,179 @@ cdk bootstrap aws://ACCOUNT_ID/REGION --profile myblog-dev
 
 ## 8. デプロイ手順
 
-### 1. ビルド
+### 完全なワークフロー（デプロイ → テスト）
+
+```bash
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 1. インフラをデプロイ
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+cd myblog-aws
+cdk deploy --all --profile myblog-dev
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 2. 環境変数を自動同期（重要！）
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+cd ..
+./scripts/sync-env.sh
+
+# 自動的に以下が.envに設定される:
+# - API_URL
+# - COGNITO_USER_POOL_ID, COGNITO_CLIENT_ID
+# - DYNAMODB_TABLE_NAME
+# - MEDIA_BUCKET_NAME, MEDIA_CLOUDFRONT_DOMAIN
+# - FRONTEND_BUCKET_NAME, FRONTEND_CLOUDFRONT_DOMAIN
+# - AWS_REGION
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 3. 管理者ユーザー作成（初回のみ）
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Cognito User作成
+aws cognito-idp admin-create-user \
+  --user-pool-id ap-northeast-1_aMvLFicqR \
+  --username haya12to17@gmail.com \
+  --user-attributes Name=email,Value=haya12to17@gmail.com \
+  --message-action SUPPRESS \
+  --profile myblog-dev
+
+# パスワード設定
+aws cognito-idp admin-set-user-password \
+  --user-pool-id ap-northeast-1_aMvLFicqR \
+  --username haya12to17@gmail.com \
+  --password YourSecurePassword123! \
+  --permanent \
+  --profile myblog-dev
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 4. .envにパスワード設定
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+vi .env
+# TEST_USER_PASSWORD=YourSecurePassword123!
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# 5. APIテスト実行
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+./tests/api-test.sh
+
+# 自動的に以下が実行される:
+# - .envファイル読み込み
+# - Cognito自動ログイン（JWTトークン取得）
+# - 全8エンドポイントのテスト
+# - 記事作成 → 更新 → 削除の一連フロー
+```
+
+### 個別コマンド詳細
+
+#### 1. ビルド
 
 ```bash
 cd myblog-aws
 npm run build
 ```
 
-### 2. 差分確認
+#### 2. 差分確認
 
 ```bash
 cdk diff --profile myblog-dev
 ```
 
-### 3. デプロイ
+#### 3. デプロイ
 
 ```bash
-# 全Stackデプロイ
-cdk deploy --all --profile myblog-dev
+# 全Stackデプロイ（推奨）
+cdk deploy --all --profile myblog-dev --require-approval never
 
 # 個別デプロイ
 cdk deploy MyBlog-DataStack --profile myblog-dev
 cdk deploy MyBlog-AppStack --profile myblog-dev
 ```
 
-### 4. 出力確認
+#### 4. 環境変数の自動同期
 
 ```bash
-# デプロイ完了後、以下の情報が出力される
-
-MyBlog-DataStack:
-  TableName = MyBlogDataStack-MyBlogTable-XXXXX
-  MediaBucketName = myblogdatastack-mediabucket-xxxxx
-  MediaDistributionDomainName = d0987654321.cloudfront.net
-  UserPoolId = ap-northeast-1_XXXXX
-  UserPoolClientId = xxxxxxxxxxxxx
-
-MyBlog-AppStack:
-  FrontendBucketName = myblogappstack-frontendbucket-xxxxx
-  DistributionDomainName = d1234567890.cloudfront.net
-  ApiUrl = https://xxxxx.execute-api.ap-northeast-1.amazonaws.com/prod
+# CDKデプロイ後は必ず実行！
+./scripts/sync-env.sh
 ```
 
-### 5. 管理者ユーザー作成
+**sync-env.shが実行すること:**
+- CloudFormation StackのOutputsを取得
+- .envファイルを自動生成/更新
+- 更新前に自動バックアップ作成（.env.backup.YYYYMMDD_HHMMSS）
+- TEST_USER_PASSWORDなどユーザー設定値は保持
+
+**出力例:**
+```
+╔════════════════════════════════════════════╗
+║     Syncing .env from CDK Outputs          ║
+╚════════════════════════════════════════════╝
+
+Using AWS Profile: myblog-dev
+
+🔍 Fetching CDK Stack Outputs...
+  - DataStack outputs
+  - AppStack outputs
+✅ Successfully fetched stack outputs
+
+📦 Backup created: .env.backup.20260211_225518
+✍️  Writing new .env file...
+✅ .env file updated successfully!
+
+╔════════════════════════════════════════════╗
+║           Updated Configuration            ║
+╚════════════════════════════════════════════╝
+
+AWS Configuration:
+  AWS_PROFILE: myblog-dev
+  AWS_REGION: ap-northeast-1
+
+API:
+  API_URL: https://lrpjzr35ob.execute-api.ap-northeast-1.amazonaws.com/prod
+
+DynamoDB:
+  TABLE_NAME: MyBlog-DataStack-MyBlogTable394864E0-13PY4G3B4TQLW
+
+S3 & CloudFront:
+  MEDIA_BUCKET: myblog-datastack-mediabucketbcbb02ba-ghxzsr9wj5qv
+  FRONTEND_BUCKET: myblog-appstack-frontendbucketefe2e19c-cjdjkkxw9fuk
+```
+
+#### 5. APIテスト実行
 
 ```bash
-# Cognito Userを作成
-aws cognito-idp admin-create-user \
-  --user-pool-id <USER_POOL_ID> \
-  --username admin \
-  --user-attributes Name=email,Value=your-email@example.com \
-  --profile myblog-dev
-
-# パスワード設定
-aws cognito-idp admin-set-user-password \
-  --user-pool-id <USER_POOL_ID> \
-  --username admin \
-  --password YourSecurePassword123! \
-  --permanent \
-  --profile myblog-dev
+./tests/api-test.sh
 ```
+
+**テストスクリプトの機能:**
+- ✅ .envファイルから設定を自動読み込み
+- ✅ JWT_TOKENがない場合、Cognito自動ログイン
+- ✅ 全8エンドポイントをテスト
+- ✅ カラフルな出力とエラーハンドリング
+- ✅ 詳細なテスト結果サマリー
+
+**テスト内容:**
+1. 記事作成（POST /admin/posts）
+2. 公開記事一覧取得（GET /posts）
+3. 記事詳細取得（GET /posts/{postId}）
+4. 管理者記事一覧取得（GET /admin/posts）
+5. 記事更新（PUT /admin/posts/{postId}）
+6. Pre-signed URL取得（POST /admin/presigned-url）
+7. 記事削除（DELETE /admin/posts/{postId}）
+8. 削除確認（GET /posts/{postId}）
+
+### スタック削除（クリーンアップ）
+
+```bash
+# 全リソース削除
+cdk destroy --all --profile myblog-dev
+
+# 個別削除（依存関係に注意）
+cdk destroy MyBlog-AppStack --profile myblog-dev
+cdk destroy MyBlog-DataStack --profile myblog-dev
+```
+
+**注意:**
+- DataStackは削除保護（deletionProtection: true）が有効
+- 本番データを含むDynamoDBテーブルとS3バケットは保持される
+- 完全削除するには、コンソールから手動削除が必要
 
 ---
 

@@ -203,12 +203,44 @@ export class AppStack extends cdk.Stack {
     );
 
     // ==========================================================
+    // Lambda関数（generate-presigned-url）
+    // ==========================================================
+    const generatePresignedUrlFunction = new lambdaNodejs.NodejsFunction(
+      this,
+      'GeneratePresignedUrlFunction',
+      {
+        entry: 'lambda/generate-presigned-url/index.ts',
+        handler: 'handler',
+        runtime: lambda.Runtime.NODEJS_18_X,
+        timeout: cdk.Duration.seconds(10),
+        memorySize: 128,
+        environment: {
+          BUCKET_NAME: props.dataStack.mediaBucket.bucketName,
+          REGION: cdk.Stack.of(this).region,
+          // TODO: CloudFront Distribution for media files (Phase 2)
+          // CLOUDFRONT_DOMAIN: props.dataStack.mediaDistribution.distributionDomainName,
+          CLOUDFRONT_DOMAIN: `${props.dataStack.mediaBucket.bucketName}.s3.${cdk.Stack.of(this).region}.amazonaws.com`,
+          ALLOWED_ORIGIN: '*',
+        },
+        bundling: {
+          minify: true,
+          externalModules: ['aws-sdk'],
+        },
+      }
+    );
+
+    // ==========================================================
     // DynamoDB権限を付与
     // ==========================================================
     props.dataStack.blogTable.grantReadData(getPostsFunction);
     props.dataStack.blogTable.grantWriteData(createPostFunction);
     props.dataStack.blogTable.grantReadWriteData(deletePostFunction);
     props.dataStack.blogTable.grantReadWriteData(updatePostFunction);
+
+    // ==========================================================
+    // S3権限を付与
+    // ==========================================================
+    props.dataStack.mediaBucket.grantPut(generatePresignedUrlFunction);
 
     // ==========================================================
     // CloudFormation出力
@@ -276,6 +308,16 @@ export class AppStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'UpdatePostFunctionArn', {
       value: updatePostFunction.functionArn,
       description: 'Update Post Lambda function ARN',
+    });
+
+    new cdk.CfnOutput(this, 'GeneratePresignedUrlFunctionName', {
+      value: generatePresignedUrlFunction.functionName,
+      description: 'Generate Presigned URL Lambda function name',
+    });
+
+    new cdk.CfnOutput(this, 'GeneratePresignedUrlFunctionArn', {
+      value: generatePresignedUrlFunction.functionArn,
+      description: 'Generate Presigned URL Lambda function ARN',
     });
   }
 }

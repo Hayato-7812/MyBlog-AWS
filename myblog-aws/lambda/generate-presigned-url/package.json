@@ -1,0 +1,28 @@
+{
+  "name": "generate-presigned-url",
+  "version": "1.0.0",
+  "description": "Generate presigned URL Lambda function for MyBlog",
+  "main": "index.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "lambda",
+    "s3",
+    "presigned-url",
+    "myblog"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.478.0",
+    "@aws-sdk/s3-request-presigner": "^3.478.0",
+    "ulid": "^2.3.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.131",
+    "@types/node": "^18.19.3",
+    "typescript": "^5.3.3"
+  }
+}

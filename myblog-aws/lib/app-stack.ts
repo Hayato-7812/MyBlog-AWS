@@ -6,7 +6,7 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
-import { HttpApi, HttpMethod, CorsHttpMethod } from 'aws-cdk-lib/aws-apigatewayv2';
+import { HttpApi, HttpMethod, CorsHttpMethod, PayloadFormatVersion } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import { HttpLambdaAuthorizer, HttpLambdaResponseType } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 
@@ -347,13 +347,26 @@ export class AppStack extends cdk.Stack {
 
     // ==========================================================
     // Lambda Integrations
+    // HTTP API v2では payloadFormatVersion: 2.0 を明示的に指定
     // ==========================================================
-    const getPostsIntegration = new HttpLambdaIntegration('GetPostsIntegration', getPostsFunction);
-    const getPostIntegration = new HttpLambdaIntegration('GetPostIntegration', getPostFunction);
-    const createPostIntegration = new HttpLambdaIntegration('CreatePostIntegration', createPostFunction);
-    const updatePostIntegration = new HttpLambdaIntegration('UpdatePostIntegration', updatePostFunction);
-    const deletePostIntegration = new HttpLambdaIntegration('DeletePostIntegration', deletePostFunction);
-    const generatePresignedUrlIntegration = new HttpLambdaIntegration('GeneratePresignedUrlIntegration', generatePresignedUrlFunction);
+    const getPostsIntegration = new HttpLambdaIntegration('GetPostsIntegration', getPostsFunction, {
+      payloadFormatVersion: PayloadFormatVersion.VERSION_2_0,
+    });
+    const getPostIntegration = new HttpLambdaIntegration('GetPostIntegration', getPostFunction, {
+      payloadFormatVersion: PayloadFormatVersion.VERSION_2_0,
+    });
+    const createPostIntegration = new HttpLambdaIntegration('CreatePostIntegration', createPostFunction, {
+      payloadFormatVersion: PayloadFormatVersion.VERSION_2_0,
+    });
+    const updatePostIntegration = new HttpLambdaIntegration('UpdatePostIntegration', updatePostFunction, {
+      payloadFormatVersion: PayloadFormatVersion.VERSION_2_0,
+    });
+    const deletePostIntegration = new HttpLambdaIntegration('DeletePostIntegration', deletePostFunction, {
+      payloadFormatVersion: PayloadFormatVersion.VERSION_2_0,
+    });
+    const generatePresignedUrlIntegration = new HttpLambdaIntegration('GeneratePresignedUrlIntegration', generatePresignedUrlFunction, {
+      payloadFormatVersion: PayloadFormatVersion.VERSION_2_0,
+    });
 
     // ==========================================================
     // Public Routes（認証不要）

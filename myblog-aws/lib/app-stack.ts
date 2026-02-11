@@ -179,11 +179,36 @@ export class AppStack extends cdk.Stack {
     );
 
     // ==========================================================
+    // Lambda関数（update-post）
+    // ==========================================================
+    const updatePostFunction = new lambdaNodejs.NodejsFunction(
+      this,
+      'UpdatePostFunction',
+      {
+        entry: 'lambda/update-post/index.ts',
+        handler: 'handler',
+        runtime: lambda.Runtime.NODEJS_18_X,
+        timeout: cdk.Duration.seconds(10),
+        memorySize: 128,
+        environment: {
+          TABLE_NAME: props.dataStack.blogTable.tableName,
+          REGION: cdk.Stack.of(this).region,
+          ALLOWED_ORIGIN: '*',
+        },
+        bundling: {
+          minify: true,
+          externalModules: ['aws-sdk'],
+        },
+      }
+    );
+
+    // ==========================================================
     // DynamoDB権限を付与
     // ==========================================================
     props.dataStack.blogTable.grantReadData(getPostsFunction);
     props.dataStack.blogTable.grantWriteData(createPostFunction);
     props.dataStack.blogTable.grantReadWriteData(deletePostFunction);
+    props.dataStack.blogTable.grantReadWriteData(updatePostFunction);
 
     // ==========================================================
     // CloudFormation出力
@@ -241,6 +266,16 @@ export class AppStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'DeletePostFunctionArn', {
       value: deletePostFunction.functionArn,
       description: 'Delete Post Lambda function ARN',
+    });
+
+    new cdk.CfnOutput(this, 'UpdatePostFunctionName', {
+      value: updatePostFunction.functionName,
+      description: 'Update Post Lambda function name',
+    });
+
+    new cdk.CfnOutput(this, 'UpdatePostFunctionArn', {
+      value: updatePostFunction.functionArn,
+      description: 'Update Post Lambda function ARN',
     });
   }
 }

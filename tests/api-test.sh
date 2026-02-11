@@ -67,26 +67,38 @@ if [ -z "$JWT_TOKEN" ]; then
     exit 1
   fi
   
-  # Cognito認証でJWTトークンを取得
+  # Cognito認証でJWTトークンを取得（IdTokenとAccessToken両方）
   echo -e "${BLUE}🔑 Authenticating with Cognito...${NC}"
-  JWT_TOKEN=$(aws cognito-idp admin-initiate-auth \
+  
+  # 認証レスポンス全体を取得
+  AUTH_RESPONSE=$(aws cognito-idp admin-initiate-auth \
     --user-pool-id "$COGNITO_USER_POOL_ID" \
     --client-id "$COGNITO_CLIENT_ID" \
     --auth-flow ADMIN_NO_SRP_AUTH \
     --auth-parameters "USERNAME=$TEST_USER_EMAIL,PASSWORD=$TEST_USER_PASSWORD" \
     --profile "$AWS_PROFILE" \
-    --query 'AuthenticationResult.IdToken' \
-    --output text 2>&1)
+    --output json 2>&1)
   
   # 認証エラーチェック
-  if [ $? -ne 0 ] || [ -z "$JWT_TOKEN" ] || [[ "$JWT_TOKEN" == *"error"* ]]; then
+  if [ $? -ne 0 ] || [[ "$AUTH_RESPONSE" == *"error"* ]]; then
     echo -e "${RED}❌ Authentication failed${NC}"
-    echo "$JWT_TOKEN"
+    echo "$AUTH_RESPONSE"
+    exit 1
+  fi
+  
+  # IdTokenを取得（HTTP APIのJWT AuthorizerはIdTokenを使用）
+  JWT_TOKEN=$(echo "$AUTH_RESPONSE" | jq -r '.AuthenticationResult.IdToken')
+  ACCESS_TOKEN=$(echo "$AUTH_RESPONSE" | jq -r '.AuthenticationResult.AccessToken')
+  
+  if [ -z "$JWT_TOKEN" ] || [ "$JWT_TOKEN" == "null" ]; then
+    echo -e "${RED}❌ Failed to extract IdToken${NC}"
+    echo "$AUTH_RESPONSE"
     exit 1
   fi
   
   echo -e "${GREEN}✅ Authentication successful${NC}"
   echo -e "${YELLOW}ℹ️  Token expires in 1 hour${NC}"
+  echo -e "${YELLOW}ℹ️  IdToken: ${JWT_TOKEN:0:50}...${NC}"
 fi
 
 # テストカウンター

@@ -3,11 +3,14 @@ import { Construct } from 'constructs';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
+import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
+import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 
 export class DataStack extends cdk.Stack {
   // 他のスタックから参照できるようにpublicプロパティとして公開
   public readonly blogTable: dynamodb.TableV2;
   public readonly mediaBucket: s3.Bucket;
+  public readonly mediaDistribution: cloudfront.Distribution;
   public readonly userPool: cognito.UserPool;
   public readonly userPoolClient: cognito.UserPoolClient;
 
@@ -156,6 +159,41 @@ export class DataStack extends cdk.Stack {
     });
 
     // ==========================================================
+    // CloudFront Distribution（メディア配信用）
+    // ==========================================================
+    
+    // OAI（Origin Access Identity）の作成
+    const mediaOriginAccessIdentity = new cloudfront.OriginAccessIdentity(
+      this,
+      'MediaOriginAccessIdentity',
+      {
+        comment: 'OAI for MyBlog media bucket',
+      }
+    );
+
+    // S3バケットにOAI読み取り権限を付与
+    this.mediaBucket.grantRead(mediaOriginAccessIdentity);
+
+    // CloudFront Distribution作成
+    this.mediaDistribution = new cloudfront.Distribution(this, 'MediaDistribution', {
+      defaultBehavior: {
+        origin: new origins.S3Origin(this.mediaBucket, {
+          originAccessIdentity: mediaOriginAccessIdentity,
+        }),
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+      },
+      
+      // Price Class 200（北米、欧州、アジア、中東、アフリカ）
+      // 設計ドキュメント「5. コスト最適化 - CloudFront」に基づく
+      priceClass: cloudfront.PriceClass.PRICE_CLASS_200,
+      
+      // コメント
+      comment: 'CloudFront Distribution for MyBlog media files',
+    });
+
+    // ==========================================================
     // Cognito User Pool（管理者認証）
     // ==========================================================
     this.userPool = new cognito.UserPool(this, 'UserPool', {
@@ -297,6 +335,19 @@ export class DataStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'UserPoolClientId', {
       value: this.userPoolClient.userPoolClientId,
       description: 'Cognito User Pool Client ID',
+      // exportName: 不要（Stack間の直接参照を使用）
+    });
+
+    // CloudFront Distribution (Media)
+    new cdk.CfnOutput(this, 'MediaDistributionId', {
+      value: this.mediaDistribution.distributionId,
+      description: 'CloudFront Distribution ID for media files',
+      // exportName: 不要（Stack間の直接参照を使用）
+    });
+
+    new cdk.CfnOutput(this, 'MediaDistributionDomainName', {
+      value: this.mediaDistribution.distributionDomainName,
+      description: 'CloudFront Distribution Domain Name for media files',
       // exportName: 不要（Stack間の直接参照を使用）
     });
   }

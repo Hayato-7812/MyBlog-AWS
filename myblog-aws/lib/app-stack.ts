@@ -217,9 +217,8 @@ export class AppStack extends cdk.Stack {
         environment: {
           BUCKET_NAME: props.dataStack.mediaBucket.bucketName,
           REGION: cdk.Stack.of(this).region,
-          // TODO: CloudFront Distribution for media files (Phase 2)
-          // CLOUDFRONT_DOMAIN: props.dataStack.mediaDistribution.distributionDomainName,
-          CLOUDFRONT_DOMAIN: `${props.dataStack.mediaBucket.bucketName}.s3.${cdk.Stack.of(this).region}.amazonaws.com`,
+          // CloudFront Distribution for media files
+          CLOUDFRONT_DOMAIN: props.dataStack.mediaDistribution.distributionDomainName,
           ALLOWED_ORIGIN: '*',
         },
         bundling: {

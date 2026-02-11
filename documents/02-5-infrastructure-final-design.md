@@ -17,6 +17,7 @@
 ```
 - DynamoDB テーブル（記事データ）
 - S3 バケット（メディアファイル）
+- CloudFront Distribution（メディア配信用）
 - Cognito User Pool（認証）
 - Route53 HostedZone（ドメイン管理）
 ```

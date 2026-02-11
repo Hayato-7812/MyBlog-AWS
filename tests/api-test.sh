@@ -12,28 +12,67 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# 設定
+# スクリプトのディレクトリを取得
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# .envファイルの読み込み
+if [ -f "$PROJECT_ROOT/.env" ]; then
+  echo -e "${BLUE}📄 Loading .env file...${NC}"
+  # .envファイルを読み込む（コメントと空行を除外）
+  export $(grep -v '^#' "$PROJECT_ROOT/.env" | grep -v '^$' | xargs)
+fi
+
+# 設定（環境変数または.envから読み込み）
 API_URL="${API_URL:-https://lrpjzr35ob.execute-api.ap-northeast-1.amazonaws.com/prod}"
+AWS_PROFILE="${AWS_PROFILE:-myblog-dev}"
+COGNITO_USER_POOL_ID="${COGNITO_USER_POOL_ID:-}"
+COGNITO_CLIENT_ID="${COGNITO_CLIENT_ID:-}"
+TEST_USER_EMAIL="${TEST_USER_EMAIL:-}"
+TEST_USER_PASSWORD="${TEST_USER_PASSWORD:-}"
 JWT_TOKEN="${JWT_TOKEN:-}"
 
-# JWT_TOKENが設定されていない場合のエラー
+# JWT_TOKENが設定されていない場合は自動ログイン
 if [ -z "$JWT_TOKEN" ]; then
-  echo -e "${RED}❌ Error: JWT_TOKEN environment variable is not set${NC}"
-  echo ""
-  echo "Usage:"
-  echo "  export JWT_TOKEN='your-jwt-token'"
-  echo "  ./tests/api-test.sh"
-  echo ""
-  echo "Get JWT Token:"
-  echo "  aws cognito-idp admin-initiate-auth \\"
-  echo "    --user-pool-id ap-northeast-1_aMvLFicqR \\"
-  echo "    --client-id 1ppe419ddmqtl8hrerrbjeij37 \\"
-  echo "    --auth-flow ADMIN_NO_SRP_AUTH \\"
-  echo "    --auth-parameters USERNAME=your-email@example.com,PASSWORD=YourPassword \\"
-  echo "    --profile myblog-dev \\"
-  echo "    --query 'AuthenticationResult.IdToken' \\"
-  echo "    --output text"
-  exit 1
+  echo -e "${YELLOW}🔐 JWT_TOKEN not set, attempting auto-login...${NC}"
+  
+  # 認証情報の確認
+  if [ -z "$COGNITO_USER_POOL_ID" ] || [ -z "$COGNITO_CLIENT_ID" ] || [ -z "$TEST_USER_EMAIL" ] || [ -z "$TEST_USER_PASSWORD" ]; then
+    echo -e "${RED}❌ Error: Missing credentials in .env file${NC}"
+    echo ""
+    echo "Please create .env file with the following variables:"
+    echo "  COGNITO_USER_POOL_ID=your-pool-id"
+    echo "  COGNITO_CLIENT_ID=your-client-id"
+    echo "  TEST_USER_EMAIL=your-email@example.com"
+    echo "  TEST_USER_PASSWORD=your-password"
+    echo "  AWS_PROFILE=myblog-dev"
+    echo ""
+    echo "Or set JWT_TOKEN manually:"
+    echo "  export JWT_TOKEN='your-jwt-token'"
+    echo "  ./tests/api-test.sh"
+    exit 1
+  fi
+  
+  # Cognito認証でJWTトークンを取得
+  echo -e "${BLUE}🔑 Authenticating with Cognito...${NC}"
+  JWT_TOKEN=$(aws cognito-idp admin-initiate-auth \
+    --user-pool-id "$COGNITO_USER_POOL_ID" \
+    --client-id "$COGNITO_CLIENT_ID" \
+    --auth-flow ADMIN_NO_SRP_AUTH \
+    --auth-parameters "USERNAME=$TEST_USER_EMAIL,PASSWORD=$TEST_USER_PASSWORD" \
+    --profile "$AWS_PROFILE" \
+    --query 'AuthenticationResult.IdToken' \
+    --output text 2>&1)
+  
+  # 認証エラーチェック
+  if [ $? -ne 0 ] || [ -z "$JWT_TOKEN" ] || [[ "$JWT_TOKEN" == *"error"* ]]; then
+    echo -e "${RED}❌ Authentication failed${NC}"
+    echo "$JWT_TOKEN"
+    exit 1
+  fi
+  
+  echo -e "${GREEN}✅ Authentication successful${NC}"
+  echo -e "${YELLOW}ℹ️  Token expires in 1 hour${NC}"
 fi
 
 # テストカウンター

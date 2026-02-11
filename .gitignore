@@ -1,0 +1,111 @@
+# ============================================
+# Environment Variables (機密情報)
+# ============================================
+.env
+.env.local
+.env.*.local
+
+# ============================================
+# AWS CDK
+# ============================================
+*.swp
+package-lock.json
+__pycache__
+.pytest_cache
+.venv
+*.egg-info
+
+# CDK asset staging directory
+.cdk.staging
+cdk.out
+
+# ============================================
+# Node.js
+# ============================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Dependency directories
+jspm_packages/
+
+# ============================================
+# TypeScript
+# ============================================
+*.tsbuildinfo
+*.js
+*.d.ts
+!jest.config.js
+
+# Exclude Lambda handler files from ignore
+!myblog-aws/lambda/**/*.js
+!myblog-aws/lambda/**/*.d.ts
+
+# ============================================
+# IDE
+# ============================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ============================================
+# Test Coverage
+# ============================================
+coverage/
+.nyc_output/
+*.lcov
+
+# ============================================
+# Logs
+# ============================================
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ============================================
+# Temporary Files
+# ============================================
+*.tmp
+*.temp
+.cache/
+
+# ============================================
+# OS Files
+# ============================================
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ============================================
+# AWS Credentials (追加の保護)
+# ============================================
+.aws/
+aws-exports.js
+
+# ============================================
+# Secrets (追加の保護層)
+# ============================================
+*secret*
+*password*
+*credentials*
+!documents/**
+!README.md
+!*.md
+
+# ============================================
+# Build Artifacts
+# ============================================
+dist/
+build/
+out/

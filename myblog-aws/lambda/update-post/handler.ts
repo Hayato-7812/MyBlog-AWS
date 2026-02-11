@@ -70,8 +70,16 @@ export async function updatePost(
     content: request.content,
   }, now);
   
+  // 新しいアイテムのpk+skのセットを作成
+  const newItemKeys = new Set(newItems.map(item => `${item.pk}#${item.sk}`));
+  
+  // 既存アイテムから、新しいアイテムと重複するものを除外
+  const itemsToDelete = existingItems.filter(item => 
+    !newItemKeys.has(`${item.pk}#${item.sk}`)
+  );
+  
   const transactItems = [
-    ...existingItems.map(item => ({
+    ...itemsToDelete.map(item => ({
       Delete: {
         TableName: TABLE_NAME,
         Key: {

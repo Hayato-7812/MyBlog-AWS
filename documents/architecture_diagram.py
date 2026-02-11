@@ -15,7 +15,8 @@ from diagrams.aws.compute import Lambda
 from diagrams.aws.database import Dynamodb
 from diagrams.aws.storage import S3
 from diagrams.aws.network import CF, APIGateway
-from diagrams.aws.security import Cognito
+from diagrams.aws.security import Cognito, IAMRole
+from diagrams.aws.management import Cloudwatch
 from diagrams.onprem.client import Users, User
 
 # グラフ設定
@@ -138,6 +139,11 @@ with Diagram(
         # Authentication
         with Cluster("Authentication"):
             cognito_pool = Cognito("Cognito User Pool\nAdmin Auth")
+        
+        # Logging & Monitoring
+        with Cluster("Logging & Monitoring"):
+            cw_logs = Cloudwatch("CloudWatch Logs\nAPI Gateway Logs")
+            iam_logs_role = IAMRole("IAM Role\nAPI GW Logs")
     
     # フロー: Frontend
     general_user >> cf_frontend >> s3_frontend
@@ -166,6 +172,10 @@ with Diagram(
     # フロー: Media Delivery
     s3_media_bucket >> cf_media_dist
     general_user >> cf_media_dist
+    
+    # フロー: Logging
+    api_gw >> Edge(label="Logs") >> cw_logs
+    iam_logs_role >> Edge(label="Write Permission") >> cw_logs
 
 
 print("✅ Architecture diagrams generated successfully!")

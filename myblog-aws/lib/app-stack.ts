@@ -297,6 +297,12 @@ export class AppStack extends cdk.Stack {
       },
     });
 
+    // API Gateway Account設定（CloudWatch Logsロール）
+    // これはAWSアカウント全体で1つのみ設定される
+    const apiGatewayAccount = new apigateway.CfnAccount(this, 'ApiGatewayAccount', {
+      cloudWatchRoleArn: props.dataStack.apiGatewayCloudWatchRole.roleArn,
+    });
+
     // ==========================================================
     // Cognito Authorizer（管理者向けAPI用）
     // ==========================================================

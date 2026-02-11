@@ -5,6 +5,7 @@
 ### 1.1 基本原則
 
 * **RESTful API**: リソース指向のURL設計とHTTPメソッドの適切な使用
+* **HTTP API (API Gateway v2)**: コスト最適化（REST APIより70%削減）
 * **JSON形式**: すべてのリクエスト/レスポンスはJSON形式
 * **キャメルケース**: すべてのキー名は `lowerCamelCase` で統一
 * **ステートレス**: セッション情報はサーバー側で保持せず、トークンベースの認証を使用
@@ -13,16 +14,16 @@
 ### 1.2 認証・認可
 
 * **一般ユーザー向けAPI**: 認証不要（公開情報のみを提供）
-* **管理者向けAPI**: Amazon Cognito + API Gateway Authorizerで認証
+* **管理者向けAPI**: Amazon Cognito + HTTP API JWT Authorizerで認証
   * リクエストヘッダー: `Authorization: Bearer <JWT_TOKEN>`
   * 認証失敗時: `401 Unauthorized`
   * 認可失敗時: `403 Forbidden`
 
-### 1.3 ベースURL(仮)
+### 1.3 ベースURL
 
-* **本番環境**: `https://api.shimizuhayato-myblog-aws.com`
+* **本番環境**: `https://exkbajls55.execute-api.ap-northeast-1.amazonaws.com/`
 
-> **注**: 開発初期段階では本番環境のみを使用します。将来的に開発・ステージング環境を分離する必要が出た場合は、CDKのコンテキスト変数を用いた環境分離を検討します。
+> **注**: HTTP API (API Gateway v2)を使用。REST APIと比較して70%のコスト削減を実現。
 
 ---
 

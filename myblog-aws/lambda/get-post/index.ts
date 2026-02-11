@@ -47,9 +47,12 @@ export const handler = async (
       };
     }
     
-    // 認証情報の確認（Cognito Authorizerから渡される）
+    // 認証情報の確認（Lambda Authorizerから渡される）
     // 管理者の場合、下書き記事も取得可能
-    const isAdmin = !!event.requestContext.authorizer?.claims?.sub;
+    // HTTP API v2では Lambda Authorizer が返したコンテキストは
+    // event.requestContext.authorizer.lambda に格納される
+    const authContext = (event.requestContext.authorizer as any)?.lambda || {};
+    const isAdmin = !!authContext.sub;
     
     // 記事詳細を取得
     const result = await getPost(postId, isAdmin);

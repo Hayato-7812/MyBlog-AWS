@@ -66,10 +66,13 @@ export const handler = async (
     }
 
     // 3. Cognitoユーザー情報の取得
+    // HTTP API v2では Lambda Authorizer が返したコンテキストは
+    // event.requestContext.authorizer.lambda に格納される
+    const authContext = (event.requestContext.authorizer as any)?.lambda || {};
     const user = {
-      sub: event.requestContext.authorizer?.claims?.sub || '',
-      email: event.requestContext.authorizer?.claims?.email || '',
-      'cognito:username': event.requestContext.authorizer?.claims?.['cognito:username'] || '',
+      sub: authContext.sub || '',
+      email: authContext.email || '',
+      'cognito:username': authContext.username || '',
     };
 
     // ユーザー認証チェック

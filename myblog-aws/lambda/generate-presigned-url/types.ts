@@ -12,15 +12,13 @@ export interface GeneratePresignedUrlRequest {
 // レスポンスの型定義
 
 /**
- * POST /presigned-url レスポンス
+ * POST /presigned-url レスポンス（API設計書に準拠）
  */
 export interface GeneratePresignedUrlResponse {
-  data: {
-    uploadUrl: string;      // Pre-signed URL（アップロード用）
-    fileUrl: string;        // ファイルの公開URL（アップロード後のアクセス用）
-    fileName: string;       // 生成されたファイル名（ULID + 元のファイル名）
-    expiresIn: number;      // URLの有効期限（秒）
-  };
+  uploadUrl: string;      // Pre-signed URL（アップロード用）
+  mediaUrl: string;       // ファイルの公開URL（アップロード後のアクセス用）
+  mediaId: string;        // メディアID（記事に紐付ける際に使用）
+  expiresIn: number;      // URLの有効期限（秒）
 }
 
 /**

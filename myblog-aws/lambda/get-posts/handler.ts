@@ -58,18 +58,15 @@ export async function getPostsList(
     hasNextToken: !!result.LastEvaluatedKey,
   });
   
-  // レスポンスの構築
+  // レスポンスの構築（API設計書に準拠）
   const response: GetPostsResponse = {
-    data: (result.Items || []) as PostItem[],
-    meta: {
-      count: result.Items?.length || 0,
-      limit,
-    },
+    posts: (result.Items || []) as PostItem[],
+    hasMore: !!result.LastEvaluatedKey,
   };
   
   // ページネーショントークンの生成
   if (result.LastEvaluatedKey) {
-    response.meta.nextToken = Buffer.from(
+    response.nextToken = Buffer.from(
       JSON.stringify(result.LastEvaluatedKey)
     ).toString('base64');
   }

@@ -95,14 +95,12 @@ export async function generatePresignedUrl(
   
   console.log('Pre-signed URL generated successfully');
   
-  // レスポンスの構築
+  // レスポンスの構築（API設計書に準拠）
   return {
-    data: {
-      uploadUrl,
-      fileUrl,
-      fileName: generatedFileName,
-      expiresIn: EXPIRATION_TIME,
-    },
+    uploadUrl,
+    mediaUrl: fileUrl,
+    mediaId: generatedFileName.replace(getFileExtension(generatedFileName), ''),
+    expiresIn: EXPIRATION_TIME,
   };
 }
 

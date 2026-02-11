@@ -21,14 +21,11 @@ export interface GetPostsQueryParams {
   nextToken?: string;   // ページネーション用トークン
 }
 
-// レスポンスの型定義
+// レスポンスの型定義（API設計書に準拠）
 export interface GetPostsResponse {
-  data: PostItem[];
-  meta: {
-    count: number;
-    limit: number;
-    nextToken?: string;
-  };
+  posts: PostItem[];
+  nextToken?: string;
+  hasMore: boolean;
 }
 
 // エラーレスポンスの型定義

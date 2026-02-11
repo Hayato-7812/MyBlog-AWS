@@ -14,7 +14,6 @@ export class DataStack extends cdk.Stack {
   public readonly mediaDistribution: cloudfront.Distribution;
   public readonly userPool: cognito.UserPool;
   public readonly userPoolClient: cognito.UserPoolClient;
-  public readonly apiGatewayCloudWatchRole: iam.Role;
 
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
@@ -297,21 +296,6 @@ export class DataStack extends cdk.Stack {
       
       // セキュリティ設定
       preventUserExistenceErrors: true,  // ユーザー存在チェック攻撃を防ぐ
-    });
-
-    // ==========================================================
-    // API Gateway CloudWatch Logs Role
-    // ==========================================================
-    // API GatewayがCloudWatch Logsに書き込むためのIAMロール
-    // これはAWSアカウント全体で1つのみ設定される
-    this.apiGatewayCloudWatchRole = new iam.Role(this, 'ApiGatewayCloudWatchRole', {
-      assumedBy: new iam.ServicePrincipal('apigateway.amazonaws.com'),
-      description: 'IAM role for API Gateway to write logs to CloudWatch',
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName(
-          'service-role/AmazonAPIGatewayPushToCloudWatchLogs'
-        ),
-      ],
     });
 
     // ==========================================================

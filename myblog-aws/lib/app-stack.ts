@@ -154,11 +154,36 @@ export class AppStack extends cdk.Stack {
       }
     );
 
+    // ==========================================================
+    // Lambda関数（delete-post）
+    // ==========================================================
+    const deletePostFunction = new lambdaNodejs.NodejsFunction(
+      this,
+      'DeletePostFunction',
+      {
+        entry: 'lambda/delete-post/index.ts',
+        handler: 'handler',
+        runtime: lambda.Runtime.NODEJS_18_X,
+        timeout: cdk.Duration.seconds(10),
+        memorySize: 128,
+        environment: {
+          TABLE_NAME: props.dataStack.blogTable.tableName,
+          REGION: cdk.Stack.of(this).region,
+          ALLOWED_ORIGIN: '*',
+        },
+        bundling: {
+          minify: true,
+          externalModules: ['aws-sdk'],
+        },
+      }
+    );
 
-
-    // DynamoDB読み取り権限を付与
+    // ==========================================================
+    // DynamoDB権限を付与
+    // ==========================================================
     props.dataStack.blogTable.grantReadData(getPostsFunction);
-    props.dataStack.blogTable.grantWriteData(createPostFunction); 
+    props.dataStack.blogTable.grantWriteData(createPostFunction);
+    props.dataStack.blogTable.grantReadWriteData(deletePostFunction);
 
     // ==========================================================
     // CloudFormation出力
@@ -206,6 +231,16 @@ export class AppStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'CreatePostFunctionArn', {
       value: createPostFunction.functionArn,
       description: 'Create Post Lambda function ARN',
+    });
+
+    new cdk.CfnOutput(this, 'DeletePostFunctionName', {
+      value: deletePostFunction.functionName,
+      description: 'Delete Post Lambda function name',
+    });
+
+    new cdk.CfnOutput(this, 'DeletePostFunctionArn', {
+      value: deletePostFunction.functionArn,
+      description: 'Delete Post Lambda function ARN',
     });
   }
 }

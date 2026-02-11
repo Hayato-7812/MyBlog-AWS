@@ -1,0 +1,26 @@
+{
+  "name": "delete-post",
+  "version": "1.0.0",
+  "description": "Delete post Lambda function for MyBlog",
+  "main": "index.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "lambda",
+    "dynamodb",
+    "myblog"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.478.0",
+    "@aws-sdk/lib-dynamodb": "^3.478.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.131",
+    "@types/node": "^18.19.3",
+    "typescript": "^5.3.3"
+  }
+}

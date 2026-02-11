@@ -6,6 +6,7 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
+import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 
 
 // AppStackのプロパティにDataStackを含める
@@ -267,6 +268,143 @@ export class AppStack extends cdk.Stack {
     props.dataStack.mediaBucket.grantPut(generatePresignedUrlFunction);
 
     // ==========================================================
+    // API Gateway REST API
+    // ==========================================================
+    const api = new apigateway.RestApi(this, 'MyBlogApi', {
+      restApiName: 'MyBlog REST API',
+      description: 'REST API for MyBlog application',
+      
+      // CORS設定
+      defaultCorsPreflightOptions: {
+        allowOrigins: apigateway.Cors.ALL_ORIGINS,  // Phase 1: すべてのドメインを許可
+        allowMethods: apigateway.Cors.ALL_METHODS,
+        allowHeaders: [
+          'Content-Type',
+          'Authorization',
+          'X-Amz-Date',
+          'X-Api-Key',
+          'X-Amz-Security-Token',
+        ],
+        allowCredentials: true,
+      },
+      
+      // デプロイメント設定
+      deployOptions: {
+        stageName: 'prod',
+        loggingLevel: apigateway.MethodLoggingLevel.INFO,
+        dataTraceEnabled: true,
+        metricsEnabled: true,
+      },
+    });
+
+    // ==========================================================
+    // Cognito Authorizer（管理者向けAPI用）
+    // ==========================================================
+    const authorizer = new apigateway.CognitoUserPoolsAuthorizer(
+      this,
+      'CognitoAuthorizer',
+      {
+        cognitoUserPools: [props.dataStack.userPool],
+        authorizerName: 'CognitoAuthorizer',
+        identitySource: 'method.request.header.Authorization',
+      }
+    );
+
+    // ==========================================================
+    // API Gatewayリソース定義
+    // ==========================================================
+    
+    // /posts（一般ユーザー向け）
+    const postsResource = api.root.addResource('posts');
+    
+    // GET /posts - 記事一覧取得（公開記事のみ）
+    postsResource.addMethod(
+      'GET',
+      new apigateway.LambdaIntegration(getPostsFunction)
+    );
+    
+    // /posts/{postId}（一般ユーザー向け）
+    const postResource = postsResource.addResource('{postId}');
+    
+    // GET /posts/{postId} - 記事詳細取得（公開記事のみ）
+    postResource.addMethod(
+      'GET',
+      new apigateway.LambdaIntegration(getPostFunction)
+    );
+    
+    // /admin（管理者向け）
+    const adminResource = api.root.addResource('admin');
+    
+    // /admin/posts（管理者向け）
+    const adminPostsResource = adminResource.addResource('posts');
+    
+    // GET /admin/posts - 記事一覧取得（すべてのステータス）
+    adminPostsResource.addMethod(
+      'GET',
+      new apigateway.LambdaIntegration(getPostsFunction),
+      {
+        authorizer: authorizer,
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+      }
+    );
+    
+    // POST /admin/posts - 記事新規作成
+    adminPostsResource.addMethod(
+      'POST',
+      new apigateway.LambdaIntegration(createPostFunction),
+      {
+        authorizer: authorizer,
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+      }
+    );
+    
+    // /admin/posts/{postId}（管理者向け）
+    const adminPostResource = adminPostsResource.addResource('{postId}');
+    
+    // GET /admin/posts/{postId} - 記事詳細取得（下書き含む）
+    adminPostResource.addMethod(
+      'GET',
+      new apigateway.LambdaIntegration(getPostFunction),
+      {
+        authorizer: authorizer,
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+      }
+    );
+    
+    // PUT /admin/posts/{postId} - 記事更新
+    adminPostResource.addMethod(
+      'PUT',
+      new apigateway.LambdaIntegration(updatePostFunction),
+      {
+        authorizer: authorizer,
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+      }
+    );
+    
+    // DELETE /admin/posts/{postId} - 記事削除
+    adminPostResource.addMethod(
+      'DELETE',
+      new apigateway.LambdaIntegration(deletePostFunction),
+      {
+        authorizer: authorizer,
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+      }
+    );
+    
+    // /admin/presigned-url（管理者向け）
+    const adminPresignedUrlResource = adminResource.addResource('presigned-url');
+    
+    // POST /admin/presigned-url - Pre-signed URL生成
+    adminPresignedUrlResource.addMethod(
+      'POST',
+      new apigateway.LambdaIntegration(generatePresignedUrlFunction),
+      {
+        authorizer: authorizer,
+        authorizationType: apigateway.AuthorizationType.COGNITO,
+      }
+    );
+
+    // ==========================================================
     // CloudFormation出力
     // ==========================================================
     new cdk.CfnOutput(this, 'FrontendBucketName', {
@@ -352,6 +490,17 @@ export class AppStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'GeneratePresignedUrlFunctionArn', {
       value: generatePresignedUrlFunction.functionArn,
       description: 'Generate Presigned URL Lambda function ARN',
+    });
+
+    // API Gateway
+    new cdk.CfnOutput(this, 'ApiId', {
+      value: api.restApiId,
+      description: 'API Gateway REST API ID',
+    });
+
+    new cdk.CfnOutput(this, 'ApiUrl', {
+      value: api.url,
+      description: 'API Gateway URL',
     });
   }
 }

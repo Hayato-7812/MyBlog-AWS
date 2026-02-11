@@ -130,8 +130,35 @@ export class AppStack extends cdk.Stack {
       }
     );
 
+    // ==========================================================
+    // Lambda関数（create-post）
+    // ==========================================================
+    const createPostFunction = new lambdaNodejs.NodejsFunction(
+      this,
+      'CreatePostFunction',
+      {
+        entry: 'lambda/create-post/index.ts',
+        handler: 'handler',
+        runtime: lambda.Runtime.NODEJS_18_X,
+        timeout: cdk.Duration.seconds(10),
+        memorySize: 128,
+        environment: {
+          TABLE_NAME: props.dataStack.blogTable.tableName,
+          REGION: cdk.Stack.of(this).region,
+          ALLOWED_ORIGIN: '*',
+        },
+        bundling: {
+          minify: true,
+          externalModules: ['aws-sdk'],
+        },
+      }
+    );
+
+
+
     // DynamoDB読み取り権限を付与
     props.dataStack.blogTable.grantReadData(getPostsFunction);
+    props.dataStack.blogTable.grantWriteData(createPostFunction); 
 
     // ==========================================================
     // CloudFormation出力
@@ -169,6 +196,16 @@ export class AppStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'GetPostsFunctionArn', {
       value: getPostsFunction.functionArn,
       description: 'Get Posts Lambda function ARN',
+    });
+
+    new cdk.CfnOutput(this, 'CreatePostFunctionName', {
+      value: createPostFunction.functionName,
+      description: 'Create Post Lambda function name',
+    });
+
+    new cdk.CfnOutput(this, 'CreatePostFunctionArn', {
+      value: createPostFunction.functionArn,
+      description: 'Create Post Lambda function ARN',
     });
   }
 }

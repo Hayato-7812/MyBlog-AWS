@@ -76,7 +76,7 @@ MEDIA_BUCKET_NAME=$(extract_output "$DATA_STACK_OUTPUTS" "MediaBucketName")
 MEDIA_CLOUDFRONT_DOMAIN=$(extract_output "$DATA_STACK_OUTPUTS" "MediaDistributionDomainName")
 
 # AppStack の値を抽出
-API_URL=$(extract_output "$APP_STACK_OUTPUTS" "MyBlogApiEndpointC82E3489")
+API_URL=$(extract_output "$APP_STACK_OUTPUTS" "HttpApiUrl")
 FRONTEND_BUCKET_NAME=$(extract_output "$APP_STACK_OUTPUTS" "FrontendBucketName")
 FRONTEND_CLOUDFRONT_DOMAIN=$(extract_output "$APP_STACK_OUTPUTS" "DistributionDomainName")
 

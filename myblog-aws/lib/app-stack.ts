@@ -8,7 +8,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as lambdaNodejs from 'aws-cdk-lib/aws-lambda-nodejs';
 import { HttpApi, HttpMethod, CorsHttpMethod } from 'aws-cdk-lib/aws-apigatewayv2';
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
-import { HttpJwtAuthorizer } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
+import { HttpLambdaAuthorizer, HttpLambdaResponseType } from 'aws-cdk-lib/aws-apigatewayv2-authorizers';
 
 
 // AppStackのプロパティにDataStackを含める
@@ -280,21 +280,41 @@ export class AppStack extends cdk.Stack {
     props.dataStack.mediaBucket.grantPut(generatePresignedUrlFunction);
 
     // ==========================================================
+    // Lambda Authorizer（Cognito認証）
+    // ==========================================================
+    const authorizerFunction = new lambdaNodejs.NodejsFunction(
+      this,
+      'JwtAuthorizerFunction',
+      {
+        entry: 'lambda/jwt-authorizer/index.ts',
+        handler: 'handler',
+        runtime: lambda.Runtime.NODEJS_18_X,
+        timeout: cdk.Duration.seconds(10),
+        memorySize: 256,
+        environment: {
+          USER_POOL_ID: props.dataStack.userPool.userPoolId,
+          CLIENT_ID: props.dataStack.userPoolClient.userPoolClientId,
+          REGION: cdk.Stack.of(this).region,
+        },
+        bundling: {
+          minify: true,
+          externalModules: ['aws-sdk'],  // aws-sdkのみ除外
+        },
+      }
+    );
+
+    // Lambda Authorizer
+    const lambdaAuthorizer = new HttpLambdaAuthorizer('LambdaAuthorizer', authorizerFunction, {
+      responseTypes: [HttpLambdaResponseType.IAM],
+      resultsCacheTtl: cdk.Duration.minutes(5),
+      identitySource: ['$request.header.Authorization'],
+    });
+
+    // ==========================================================
     // HTTP API (API Gateway v2)
     // ==========================================================
     // HTTP APIはREST APIより70%安価で、このプロジェクトに十分な機能を提供
     // コスト: $1.00/100万リクエスト (REST APIは$3.50)
-    
-    // JWT Authorizer（Cognito認証）
-    const jwtAuthorizer = new HttpJwtAuthorizer(
-      'CognitoAuthorizer',
-      `https://cognito-idp.${cdk.Stack.of(this).region}.amazonaws.com/${props.dataStack.userPool.userPoolId}`,
-      {
-        jwtAudience: [props.dataStack.userPoolClient.userPoolClientId],
-        identitySource: ['$request.header.Authorization'],
-        authorizerName: 'CognitoJwtAuthorizer',
-      }
-    );
     
     // HTTP API作成
     const httpApi = new HttpApi(this, 'MyBlogHttpApi', {
@@ -361,7 +381,7 @@ export class AppStack extends cdk.Stack {
       path: '/admin/posts',
       methods: [HttpMethod.GET],
       integration: getPostsIntegration,
-      authorizer: jwtAuthorizer,
+      authorizer: lambdaAuthorizer,
     });
     
     // POST /admin/posts - 記事新規作成
@@ -369,7 +389,7 @@ export class AppStack extends cdk.Stack {
       path: '/admin/posts',
       methods: [HttpMethod.POST],
       integration: createPostIntegration,
-      authorizer: jwtAuthorizer,
+      authorizer: lambdaAuthorizer,
     });
     
     // GET /admin/posts/{postId} - 記事詳細取得（下書き含む）
@@ -377,7 +397,7 @@ export class AppStack extends cdk.Stack {
       path: '/admin/posts/{postId}',
       methods: [HttpMethod.GET],
       integration: getPostIntegration,
-      authorizer: jwtAuthorizer,
+      authorizer: lambdaAuthorizer,
     });
     
     // PUT /admin/posts/{postId} - 記事更新
@@ -385,7 +405,7 @@ export class AppStack extends cdk.Stack {
       path: '/admin/posts/{postId}',
       methods: [HttpMethod.PUT],
       integration: updatePostIntegration,
-      authorizer: jwtAuthorizer,
+      authorizer: lambdaAuthorizer,
     });
     
     // DELETE /admin/posts/{postId} - 記事削除
@@ -393,7 +413,7 @@ export class AppStack extends cdk.Stack {
       path: '/admin/posts/{postId}',
       methods: [HttpMethod.DELETE],
       integration: deletePostIntegration,
-      authorizer: jwtAuthorizer,
+      authorizer: lambdaAuthorizer,
     });
     
     // POST /admin/presigned-url - Pre-signed URL生成
@@ -401,7 +421,7 @@ export class AppStack extends cdk.Stack {
       path: '/admin/presigned-url',
       methods: [HttpMethod.POST],
       integration: generatePresignedUrlIntegration,
-      authorizer: jwtAuthorizer,
+      authorizer: lambdaAuthorizer,
     });
 
     // ==========================================================

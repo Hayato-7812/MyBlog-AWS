@@ -1,0 +1,14 @@
+{
+  "name": "jwt-authorizer",
+  "version": "1.0.0",
+  "description": "Lambda Authorizer for JWT validation",
+  "main": "index.js",
+  "dependencies": {
+    "aws-jwt-verify": "^4.0.1"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.143",
+    "@types/node": "^20.12.7",
+    "typescript": "^5.4.5"
+  }
+}

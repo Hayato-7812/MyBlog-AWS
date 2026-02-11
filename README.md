@@ -220,16 +220,41 @@ git clone https://github.com/Hayato-7812/MyBlog-AWS.git
 cd MyBlog-AWS
 ```
 
-### 2. AWS プロファイル設定
+### 2. AWS プロファイル設定（SSO）
 
 ```bash
-# AWS CLI設定
-aws configure --profile myblog-dev
-
-# SSO使用の場合
+# AWS SSO設定（推奨）
 aws configure sso --profile myblog-dev
+
+# プロンプトに従って入力:
+# SSO start URL: https://your-sso-portal.awsapps.com/start
+# SSO Region: ap-northeast-1（例）
+# Select account: 該当アカウントを選択
+# Select role: AdministratorAccess（または適切なロール）
+# CLI default client Region: ap-northeast-1
+# CLI default output format: json
+# CLI profile name: myblog-dev
+
+# ログイン（初回）
 aws sso login --profile myblog-dev
+
+# 認証確認
+aws sts get-caller-identity --profile myblog-dev
 ```
+
+**再ログイン（セッション期限切れ時）**:
+```bash
+# セッションが切れた場合、再度ログイン
+aws sso login --profile myblog-dev
+
+# または、CDKコマンド実行時に自動的にブラウザが開く
+cdk deploy --profile myblog-dev
+# → セッション切れの場合、自動的にブラウザでSSO認証画面が開きます
+```
+
+**注意**: 
+- SSOセッションは通常8時間有効です
+- IAMユーザーを使用する場合は `aws configure --profile myblog-dev` を実行してください
 
 ### 3. CDK依存関係インストール
 

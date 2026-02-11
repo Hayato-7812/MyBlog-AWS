@@ -23,6 +23,16 @@ export class AppStack extends cdk.Stack {
     super(scope, id, props);
 
     // ==========================================================
+    // Stack Level Tags
+    // ==========================================================
+    // スタック全体に適用されるタグ（すべてのリソースに継承）
+    cdk.Tags.of(this).add('Project', 'MyBlog');
+    cdk.Tags.of(this).add('Stack', 'AppStack');
+    cdk.Tags.of(this).add('Environment', 'Production');
+    cdk.Tags.of(this).add('ManagedBy', 'CDK');
+    cdk.Tags.of(this).add('CostCenter', 'MyBlog-Backend');
+
+    // ==========================================================
     // S3バケット（フロントエンドホスティング用）
     // ==========================================================
     this.frontendBucket = new s3.Bucket(this, 'FrontendBucket', {

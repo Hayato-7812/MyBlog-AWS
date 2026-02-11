@@ -19,6 +19,16 @@ export class DataStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
+    // ==========================================================
+    // Stack Level Tags
+    // ==========================================================
+    // スタック全体に適用されるタグ（すべてのリソースに継承）
+    cdk.Tags.of(this).add('Project', 'MyBlog');
+    cdk.Tags.of(this).add('Stack', 'DataStack');
+    cdk.Tags.of(this).add('Environment', 'Production');
+    cdk.Tags.of(this).add('ManagedBy', 'CDK');
+    cdk.Tags.of(this).add('CostCenter', 'MyBlog-Backend');
+
     // DynamoDB テーブルの作成
     this.blogTable = new dynamodb.TableV2(this, 'MyBlogTable', {
       // ❌ 物理名（tableName）は指定しない

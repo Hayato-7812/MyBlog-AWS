@@ -16,28 +16,12 @@ const verifier = CognitoJwtVerifier.create({
 });
 
 /**
- * IAMポリシーを生成
+ * HTTP API v2 SIMPLE レスポンス形式
+ * IAMポリシーではなく、isAuthorized + contextを返す
  */
-function generatePolicy(
-  principalId: string,
-  effect: 'Allow' | 'Deny',
-  resource: string,
-  context?: Record<string, string>
-): AuthorizerResult {
-  return {
-    principalId,
-    policyDocument: {
-      Version: '2012-10-17',
-      Statement: [
-        {
-          Action: 'execute-api:Invoke',
-          Effect: effect,
-          Resource: resource,
-        },
-      ],
-    },
-    context,
-  };
+interface SimpleAuthorizerResponse {
+  isAuthorized: boolean;
+  context?: Record<string, string>;
 }
 
 /**
@@ -92,21 +76,18 @@ export async function handler(event: AuthorizerEvent): Promise<AuthorizerResult>
 
     console.log('✅ All validations passed');
 
-    // Allow policy を返す
-    // HTTP API v2では Resource を * (ワイルドカード) にする必要がある
-    const policy = generatePolicy(
-      payload.sub,  // principalId（Cognito User Sub）
-      'Allow',
-      '*',  // HTTP API v2ではワイルドカードが必須
-      {
+    // HTTP API v2 SIMPLE形式でレスポンス
+    const response: SimpleAuthorizerResponse = {
+      isAuthorized: true,
+      context: {
         email: payload.email,
         sub: payload.sub,
         username: payload['cognito:username'] || payload.email,
-      }
-    );
+      },
+    };
 
-    console.log('✅ Returning Allow policy');
-    return policy;
+    console.log('✅ Returning isAuthorized: true');
+    return response as any;
 
   } catch (error) {
     console.error('❌ Authorization failed:', error);
@@ -118,11 +99,9 @@ export async function handler(event: AuthorizerEvent): Promise<AuthorizerResult>
       console.error('Error stack:', error.stack);
     }
 
-    // Deny policy を返す
-    return generatePolicy(
-      'unauthorized',
-      'Deny',
-      '*'
-    );
+    // HTTP API v2 SIMPLE形式でDeny
+    return {
+      isAuthorized: false,
+    } as any;
   }
 }

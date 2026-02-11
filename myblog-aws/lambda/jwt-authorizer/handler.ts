@@ -48,11 +48,14 @@ export async function handler(event: AuthorizerEvent): Promise<AuthorizerResult>
   console.log('Event:', JSON.stringify(event, null, 2));
 
   try {
-    // Authorizationヘッダーの取得
-    const authHeader = event.headers?.['Authorization'] || event.headers?.['authorization'];
+    // HTTP API v2では identitySource 配列からトークンを取得
+    // CDK設定: identitySource: ['$request.header.Authorization']
+    // → event.identitySource[0] に "Bearer <token>" が入る
+    const authHeader = event.identitySource?.[0];
     
     if (!authHeader) {
-      console.error('❌ No Authorization header found');
+      console.error('❌ No identitySource found');
+      console.error('Event identitySource:', event.identitySource);
       throw new Error('Unauthorized');
     }
 

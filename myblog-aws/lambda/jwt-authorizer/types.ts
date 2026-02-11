@@ -1,7 +1,13 @@
 import { APIGatewayRequestAuthorizerEvent, APIGatewayAuthorizerResult } from 'aws-lambda';
 
+// HTTP API v2用のLambda Authorizerイベント型
+// APIGatewayRequestAuthorizerEventを拡張してidentitySourceを追加
+export interface HttpApiAuthorizerEvent extends APIGatewayRequestAuthorizerEvent {
+  identitySource?: string[];  // HTTP API v2で使用
+}
+
 // リクエスト型
-export type AuthorizerEvent = APIGatewayRequestAuthorizerEvent;
+export type AuthorizerEvent = HttpApiAuthorizerEvent;
 
 // レスポンス型
 export type AuthorizerResult = APIGatewayAuthorizerResult;

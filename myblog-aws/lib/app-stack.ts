@@ -131,6 +131,30 @@ export class AppStack extends cdk.Stack {
     );
 
     // ==========================================================
+    // Lambda関数（get-post）
+    // ==========================================================
+    const getPostFunction = new lambdaNodejs.NodejsFunction(
+      this,
+      'GetPostFunction',
+      {
+        entry: 'lambda/get-post/index.ts',
+        handler: 'handler',
+        runtime: lambda.Runtime.NODEJS_18_X,
+        timeout: cdk.Duration.seconds(10),
+        memorySize: 128,
+        environment: {
+          TABLE_NAME: props.dataStack.blogTable.tableName,
+          REGION: cdk.Stack.of(this).region,
+          ALLOWED_ORIGIN: '*',
+        },
+        bundling: {
+          minify: true,
+          externalModules: ['aws-sdk'],
+        },
+      }
+    );
+
+    // ==========================================================
     // Lambda関数（create-post）
     // ==========================================================
     const createPostFunction = new lambdaNodejs.NodejsFunction(
@@ -232,6 +256,7 @@ export class AppStack extends cdk.Stack {
     // DynamoDB権限を付与
     // ==========================================================
     props.dataStack.blogTable.grantReadData(getPostsFunction);
+    props.dataStack.blogTable.grantReadData(getPostFunction);
     props.dataStack.blogTable.grantWriteData(createPostFunction);
     props.dataStack.blogTable.grantReadWriteData(deletePostFunction);
     props.dataStack.blogTable.grantReadWriteData(updatePostFunction);
@@ -277,6 +302,16 @@ export class AppStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'GetPostsFunctionArn', {
       value: getPostsFunction.functionArn,
       description: 'Get Posts Lambda function ARN',
+    });
+
+    new cdk.CfnOutput(this, 'GetPostFunctionName', {
+      value: getPostFunction.functionName,
+      description: 'Get Post Lambda function name',
+    });
+
+    new cdk.CfnOutput(this, 'GetPostFunctionArn', {
+      value: getPostFunction.functionArn,
+      description: 'Get Post Lambda function ARN',
     });
 
     new cdk.CfnOutput(this, 'CreatePostFunctionName', {

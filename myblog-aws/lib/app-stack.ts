@@ -304,8 +304,9 @@ export class AppStack extends cdk.Stack {
     );
 
     // Lambda Authorizer
+    // HTTP API v2ではSIMPLEレスポンスタイプを使用
     const lambdaAuthorizer = new HttpLambdaAuthorizer('LambdaAuthorizer', authorizerFunction, {
-      responseTypes: [HttpLambdaResponseType.IAM],
+      responseTypes: [HttpLambdaResponseType.SIMPLE],
       resultsCacheTtl: cdk.Duration.minutes(5),
       identitySource: ['$request.header.Authorization'],
     });

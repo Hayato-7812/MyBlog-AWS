@@ -90,10 +90,11 @@ export async function handler(event: AuthorizerEvent): Promise<AuthorizerResult>
     console.log('✅ All validations passed');
 
     // Allow policy を返す
+    // HTTP API v2では Resource を * (ワイルドカード) にする必要がある
     const policy = generatePolicy(
       payload.sub,  // principalId（Cognito User Sub）
       'Allow',
-      event.routeArn,
+      '*',  // HTTP API v2ではワイルドカードが必須
       {
         email: payload.email,
         sub: payload.sub,
@@ -118,7 +119,7 @@ export async function handler(event: AuthorizerEvent): Promise<AuthorizerResult>
     return generatePolicy(
       'unauthorized',
       'Deny',
-      event.routeArn
+      '*'
     );
   }
 }

@@ -24,13 +24,25 @@ if [ -f "$PROJECT_ROOT/.env" ]; then
 fi
 
 # 設定（環境変数または.envから読み込み）
-API_URL="${API_URL:-https://lrpjzr35ob.execute-api.ap-northeast-1.amazonaws.com/prod}"
+API_URL="${API_URL:-}"
 AWS_PROFILE="${AWS_PROFILE:-myblog-dev}"
 COGNITO_USER_POOL_ID="${COGNITO_USER_POOL_ID:-}"
 COGNITO_CLIENT_ID="${COGNITO_CLIENT_ID:-}"
 TEST_USER_EMAIL="${TEST_USER_EMAIL:-}"
 TEST_USER_PASSWORD="${TEST_USER_PASSWORD:-}"
 JWT_TOKEN="${JWT_TOKEN:-}"
+
+# 必須設定の確認
+if [ -z "$API_URL" ]; then
+  echo -e "${RED}❌ Error: API_URL is not set${NC}"
+  echo ""
+  echo "Please set API_URL in .env file:"
+  echo "  API_URL=https://your-api.execute-api.ap-northeast-1.amazonaws.com/prod"
+  echo ""
+  echo "Or export as environment variable:"
+  echo "  export API_URL='https://your-api.execute-api.ap-northeast-1.amazonaws.com/prod'"
+  exit 1
+fi
 
 # JWT_TOKENが設定されていない場合は自動ログイン
 if [ -z "$JWT_TOKEN" ]; then
@@ -41,6 +53,7 @@ if [ -z "$JWT_TOKEN" ]; then
     echo -e "${RED}❌ Error: Missing credentials in .env file${NC}"
     echo ""
     echo "Please create .env file with the following variables:"
+    echo "  API_URL=https://your-api.execute-api.ap-northeast-1.amazonaws.com/prod"
     echo "  COGNITO_USER_POOL_ID=your-pool-id"
     echo "  COGNITO_CLIENT_ID=your-client-id"
     echo "  TEST_USER_EMAIL=your-email@example.com"
